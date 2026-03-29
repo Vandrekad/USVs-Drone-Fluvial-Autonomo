@@ -571,15 +571,45 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 
 ---
 
+## 14.0 Contabilização de Atividades por Membro
+
+### Resumo de Responsabilidades
+
+| Membro | F0 | F1 | F2 | F3 | F4 | F5 | **Total** |
+|---|----|---|---|---|---|---|---|
+| **Orlando** | 3  | 6 | 4 | 3 | 2 | 4 | **21** |
+| **Ariadne** | 4  | 6 | 3 | 4 | 3 | 2 | **21** |
+| **Leonora** | 0  | 0 | 1 | 3 | 1 | 5 | **11** |
+| **Lucinao** | 0  | 0 | 0 | 2 | 2 | 5 | **10** |
+
+### Distribuição por Área
+
+| Área | Orlando | Ariadne | Leonora | Lucinao |
+|---|---|---|---|---|
+| **Firmware** | 13 | — | — | 5 |
+| **Backend (Geral)** | 5 | 7 | — | — |
+| **Frontend** | — | 14 | 5 | — |
+| **Hardware/Testes** | — | — | 6 | 5 |
+| **Integração/Documentação** | 3 | — | — | — |
+
+### Legenda de Responsabilidades
+
+- **Orlando (21 atividades):** Firmware e Backend para Firmware (desenvolvimento autonomo)
+- **Ariadne (21 atividades):** Frontend, Dashboard e Backend para Frontend (integração e interface)
+- **Leonora (9 atividades):** Testes do projeto e Montagem do Hardware (validação e assembly)
+- **Lucinao (8 atividades):** Montagem do Hardware/Protótipo e Testes em Campo (prototipagem e testes práticos)
+
+---
+
 ## 14.1 FASE F0: Fundacao (28/03-30/03) - 3 DIAS
 
 **Objetivos:** consolidar base do projeto e alinhar arquitetura.
 
-- [ ] GitHub: repositorio, branches (`main`, `dev`, `feature/*`) e estrutura de pastas.
-- [ ] RTDB/Auth: provisionamento, seed inicial e variaveis seguras.
-- [ ] Frontend: bootstrap React + Vite e estrutura inicial.
-- [ ] Design: wireframe v1 (mapa, telemetria, logs, acoes).
-- [ ] Alinhamento final da equipe sobre schema e fluxo autonomo.
+- [ ] GitHub: repositorio, branches (`main`, `dev`, `feature/*`) e estrutura de pastas. (**Orlando, Ariadne**)
+- [ ] RTDB/Auth: provisionamento, seed inicial e variaveis seguras. (**Ariadne, Orlando**)
+- [ ] Firmware: Configuração e Teste de Ambiente de Desenvolvimento Firmware. (**Orlando**)
+- [ ] Frontend: bootstrap React + Vite e estrutura inicial. (**Ariadne**)
+- [ ] Design: wireframe v1 (mapa, telemetria, logs, acoes). (**Ariadne**)
 
 **Criterio F0:** ambiente pronto, repo organizado, RTDB ativo e frontend iniciando.
 
@@ -588,22 +618,20 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 ## 14.2 FASE F1: Desenvolvimento Paralelo com Mocks (31/03-13/04)
 
 ### Firmware
-- [ ] Conexao Wi-Fi + stream de comando no RTDB.
-- [ ] Maquina de estados + telemetria mock.
-- [ ] Geracao local de waypoints + `nav_state`.
-- [ ] Buffer `LittleFS` e registro de `path`.
+- [ ] Conexao Wi-Fi + stream de comando no RTDB. (**Orlando**)
+- [ ] Maquina de estados + telemetria mock. (**Orlando**)
+- [ ] Geracao local de waypoints + `nav_state`. (**Orlando**)
+- [ ] Buffer `LittleFS` e registro de `path`. (**Orlando**)
 
 ### Backend/Cloud
-- [ ] Security Rules por papel (firmware/frontend/admin).
-- [ ] Indices para `missions` e `logs`.
-- [ ] Testes de permissao e `onDisconnect()`.
-- [ ] Politica de retencao de logs.
+- [ ] Security Rules por papel (firmware/frontend/admin). (**Ariadne, Orlando**)
+- [ ] Testes de permissao e `onDisconnect()`. (**Ariadne, Orlando**)
+- [ ] Politica de retencao de logs. (**Ariadne**)
 
 ### Frontend
-- [ ] Mapa React Leaflet + listeners de telemetria.
-- [ ] Painel de status, telemetria e logs com dados mock.
-- [ ] Fluxo `set_destination` e `emergency_stop`.
-- [ ] Responsividade inicial.
+- [ ] Mapa React Leaflet + listeners de telemetria. (**Ariadne**)
+- [ ] Painel de status, telemetria e logs com dados mock. (**Ariadne**)
+- [ ] Fluxo `set_destination` e `emergency_stop`. (**Ariadne**)
 
 **Criterio F1:** funcionalidades principais operando com dados mockados de ponta a ponta.
 
@@ -612,17 +640,13 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 ## 14.3 FASE F2: Preparacao Pre-Hardware (14/04-27/04)
 
 ### Firmware
-- [ ] LOS basico, timeout de perna e deduplicacao de path.
-- [ ] Revisao de pinagem e preparacao de firmware para hardware real.
-- [ ] Testes de autonomia offline e reconexao.
-
-### Backend/Cloud
-- [ ] Ajustes de performance e validacao de schema final.
-- [ ] Monitoramento de volume de escrita e leitura.
+- [ ] LOS basico, timeout de perna e deduplicacao de path. (**Orlando**)
+- [ ] Revisao de pinagem e preparacao de firmware para hardware real. (**Orlando**)
+- [ ] Testes de autonomia offline e reconexao. (**Orlando**)
 
 ### Frontend
-- [ ] Polimento de UX/UI e estados de erro/loading.
-- [ ] Testes E2E com dados simulados realistas.
+- [ ] Polimento de UX/UI e estados de erro/loading. (**Ariadne**)
+- [ ] Testes E2E com dados simulados realistas. (**Ariadne, Leonora**)
 
 **Criterio F2:** stack estabilizada e pronta para conectar hardware em 28/04.
 
@@ -631,18 +655,18 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 ## 14.4 FASE F3: Integracao com Hardware Real (28/04-07/05)
 
 ### Firmware
-- [ ] Montagem e bring-up: ESP32 + GPS + bussola + ultrassom.
-- [ ] Calibracao inicial dos sensores.
-- [ ] Publicacao de telemetria real no RTDB.
+- [ ] Montagem e bring-up: ESP32 + GPS + bussola + ultrassom. (**Orlando, Lucinao**)
+- [ ] Calibracao inicial dos sensores. (**Orlando, Lucinao**)
+- [ ] Publicacao de telemetria real no RTDB. (**Orlando**)
 
 ### Backend/Cloud
-- [ ] Validar fluxo real de dados, presenca e logs.
-- [ ] Ajustar indices/regras conforme comportamento observado.
+- [ ] Validar fluxo real de dados, presenca e logs. (**Ariadne, Orlando**)
+- [ ] Ajustar indices/regras conforme comportamento observado. (**Ariadne**)
 
 ### Frontend
-- [ ] Validar mapa com posicao real do drone.
-- [ ] Validar missao fim-a-fim com `set_destination`.
-- [ ] Monitorar `nav_state`, `active_leg` e `route_progress` em tempo real.
+- [ ] Validar mapa com posicao real do drone. (**Ariadne, Leonora**)
+- [ ] Validar missao fim-a-fim com `set_destination`. (**Ariadne, Leonora**)
+- [ ] Monitorar `nav_state`, `active_leg` e `route_progress` em tempo real. (**Ariadne, Leonora**)
 
 **Criterio F3:** operacao real em bancada/agua calma com telemetria e comando funcionando.
 
@@ -651,17 +675,13 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 ## 14.5 FASE F4: Refino Final (08/05-14/05)
 
 ### Firmware
-- [ ] Ajustar compensacao de correnteza (`beta_hat`) para contexto do Amazonas.
-- [ ] Ajustar parametros LOS (`Delta`, `Kp`, `R_switch`) e estabilidade.
-- [ ] Consolidar deduplicacao e fail-safe.
-
-### Backend/Cloud
-- [ ] Revisao final de regras de seguranca e qualidade de dados.
-- [ ] Validacao de consultas para dashboard.
+- [ ] Ajustar compensacao de correnteza (`beta_hat`) para contexto do Amazonas. (**Orlando, Lucinao**)
+- [ ] Ajustar parametros LOS (`Delta`, `Kp`, `R_switch`) e estabilidade. (**Orlando, Lucinao**)
+- [ ] Consolidar deduplicacao e fail-safe. (**Orlando**)
 
 ### Frontend
-- [ ] Acabamento visual e operacional do dashboard.
-- [ ] Painel de logs e alertas final para uso em campo.
+- [ ] Acabamento visual e operacional do dashboard. (**Ariadne**)
+- [ ] Painel de logs e alertas final para uso em campo. (**Ariadne, Leonora**)
 
 **Criterio F4:** sistema pronto para ciclo final de validacao em rio.
 
@@ -669,11 +689,11 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 
 ## 14.6 FASE F5: Validacao Final e Entrega (15/05-18/05)
 
-- [ ] Teste de autonomia offline (drone continua sem backend).
-- [ ] Teste de `emergency_stop` e retorno para origem.
-- [ ] Teste de desvio de obstaculo e continuidade da missao.
-- [ ] Coleta de evidencias: videos, logs RTDB, capturas do dashboard.
-- [ ] Consolidacao da documentacao final.
+- [ ] Teste de autonomia offline (drone continua sem backend). (**Orlando, Lucinao**)
+- [ ] Teste de `emergency_stop` e retorno para origem. (**Orlando, Leonora, Lucinao**)
+- [ ] Teste de desvio de obstaculo e continuidade da missao. (**Orlando, Leonora, Lucinao**)
+- [ ] Coleta de evidencias: videos, logs RTDB, capturas do dashboard. (**Leonora, Ariadne**)
+- [ ] Consolidacao da documentacao final. (**Orlando, Ariadne, Leonora, Luciano**)
 
 **Criterio F5:** MVP validado e documentado ate **18/05/2026**.
 
