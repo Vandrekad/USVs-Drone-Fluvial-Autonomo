@@ -10,21 +10,24 @@ Objetivo do MVP: entregar e validar um prototipo funcional de embarcacao tipo ca
 ### 2.1 Firmware (ESP32)
 - Navegacao autonoma por propulsao diferencial com 2 motores.
 - Navegacao GPS por missao com alvo ativo (`target`) e historico de rota (`path`).
+- Navegacao por multiplos waypoints com controle de perna (`WP_i -> WP_{i+1}`), com geracao local no firmware.
 - Controle de rumo com bussola digital.
 - Percepcao de obstaculos com sensor ultrassonico.
 - Telemetria para nuvem e operacao fail-safe offline com buffer em `LittleFS`.
+- Execucao de missao independente do backend durante navegacao.
 - Compensacao de correnteza por algoritmo LOS usando estimativa por GPS NEO-6M + heading (detalhes na Secao 8).
 
 ### 2.2 Backend/Cloud (Firebase RTDB)
 - Armazenar telemetria, comando, missoes e logs.
 - Disponibilizar dados estruturados para monitoramento de rota, sensores e alertas.
-- Suportar controle remoto por coordenadas.
+- Receber destino final enviado pela interface e disponibilizar contrato de dados confiavel para o firmware.
 - Aplicar regras de seguranca e indices de performance.
 
 ### 2.3 Frontend (React)
 - Dashboard em React com estado de missao, sensores e atuadores.
-- Mapa com React Leaflet para operacao remota por selecao de coordenadas.
+- Mapa com React Leaflet para selecao de destino final da missao.
 - Visualizacao de rota percorrida e logs de eventos.
+- Sem edicao manual de waypoints no MVP.
 - Indicadores de conectividade (`online/offline`) e estado operacional.
 
 ## 3. Arquitetura Tecnica
@@ -34,14 +37,14 @@ Objetivo do MVP: entregar e validar um prototipo funcional de embarcacao tipo ca
 | Firmware | ESP32 + Firebase-ESP-Client + TinyGPS++ + LittleFS | Controle autonomo, leitura de sensores, envio de telemetria |
 | Backend/Cloud | Firebase RTDB + Security Rules | Persistencia, seguranca, presenca, historico |
 | Frontend | React + React Leaflet + Firebase SDK | Operacao remota, dashboard, visualizacao |
-| Telemetria em tempo real | MQTT Broker (ponte opcional para dashboard) | Streaming de baixa latencia para gemeo digital |
 
 ### 3.1 Fluxo macro
-1. Frontend cria/atualiza missao e escreve comando no RTDB.
-2. Firmware escuta stream de comando, executa navegacao e atualiza telemetria.
-3. Firmware registra `path` da missao e logs de eventos.
-4. Frontend renderiza rota, estado e alertas em tempo real.
-5. Em perda de conexao, firmware salva buffer em `LittleFS` e faz flush ao reconectar.
+1. Frontend cria a missao e envia apenas o destino final no RTDB.
+2. Firmware escuta stream de comando, gera rota local por waypoints e executa navegacao autonoma por perna.
+3. Firmware publica status operativo, telemetria, `path` e logs em tempo real.
+4. Frontend apenas monitora rota, estado e alertas.
+5. Ao concluir a rota, firmware entra em estado ocioso e continua publicando localizacao.
+6. Em perda de conexao, firmware salva buffer em `LittleFS` e faz flush ao reconectar.
 
 ## 3.2 Fluxogramas (Mermaid)
 
@@ -80,8 +83,11 @@ graph TD
 
     %% Conexões Frontend -> Cloud
     Auth -->|Valida credenciais| Rules
-    UI -->|Escreve comando/cria missão| node_cmd
-    UI <-->|Lê telemetria, mapa e logs| node_tele
+    UI -->|Escreve destino final| node_cmd
+    UI -->|Cria missão| node_miss
+    UI <-->|Lê telemetria| node_tele
+    UI <-->|Lê missão e path| node_miss
+    UI <-->|Lê logs| node_log
 
     %% Organização interna Cloud
     Rules --> RTDB
@@ -90,6 +96,7 @@ graph TD
     %% Conexões Firmware -> Cloud
     ESP -->|Envia JSON a cada 1-2s| node_tele
     ESP -->|Abre Stream| node_cmd
+    ESP <-->|Lê/escreve missão ativa| node_miss
     ESP -->|Atualiza Path| node_miss
     ESP -->|Envia Alertas| node_log
     ESP -.->|Heartbeat| StatusServer
@@ -121,11 +128,11 @@ sequenceDiagram
     rect rgb(255, 245, 238)
         Note over UI,HW: 2. CRIAÇÃO DE NOVA MISSÃO
         UI->>UI: Usuário clica no mapa
-        UI->>FB: set(/missions/m_123) [Cria nova rota]
-        UI->>FB: set(/command) [cmd_type: new_destination, target: lat/lon]
+        UI->>FB: set(/missions/m_123) [Cria missão com target]
+        UI->>FB: set(/command) [cmd_type: set_destination, target: lat/lon]
         FB-->>HW: Stream Callback detecta alteração (<50ms)
-        HW->>HW: Recalcula azimute e aciona motores
-        HW->>FB: Atualiza op_mode = "following_route"
+        HW->>HW: Gera route.points local e inicia leg_index = 0
+        HW->>FB: Atualiza nav_state = "NAVIGATING_TO_GOAL"
     end
 
     rect rgb(240, 255, 240)
@@ -165,6 +172,17 @@ graph TD
     subgraph Embarcado [ESP32 Core e Perifericos]
         MCU[Microcontrolador ESP32\nLoop Principal]:::core
         State[Maquina de Estados\nIDLE\nFOLLOWING\nRETURN]:::core
+
+            %% Estados operacionais do firmware
+            StateNav["Estado: NAVIGATING_TO_GOAL\n(LOS + waypoints)"]:::core
+            StateOcioso["Estado: IDLE_HOLDING_POSITION\n(Localizacao ativa)"]:::core
+            StateDesv["Estado: OBSTACLE_AVOIDANCE\n(Reacao local)"]:::core
+            StateReturn["Estado: RETURNING_TO_HOME\n(Rumo para origin)"]:::core
+
+            State -.-> StateNav
+            State -.-> StateOcioso
+            State -.-> StateDesv
+            State -.-> StateReturn
         WiFi[Modulo WiFi / Firebase Client]:::core
         LFS[(Flash Interna\nLittleFS)]:::mem
     end
@@ -235,7 +253,6 @@ graph TD
 - Arduino IDE 2.x ou PlatformIO
 - React + Vite (frontend)
 - Firebase RTDB + Firebase Auth
-- MQTT Broker (Mosquitto ou equivalente)
 - Bibliotecas de GPS e sensores (TinyGPS++, drivers I2C/GPIO)
 
 ## 5. Manual de Execucao por Camada (Sequencial)
@@ -254,13 +271,48 @@ Criterio de saida: ambiente pronto, acesso ao RTDB validado e hardware energizad
 3. Integrar leitura de GPS (NEO-6M), bussola e ultrassom sem bloqueios (`millis()`).
 4. Implementar maquina de estados (`IDLE`, `FOLLOWING_ROUTE`, `RETURNING_TO_ORIGIN`, `OFFLINE_NAVIGATION`).
 5. Implementar stream de comando em `/drones/{drone_id}/command`.
-6. Implementar envio de telemetria para `/drones/{drone_id}/telemetry` (1-2 s).
-7. Implementar registro de `path` em `/missions/{mission_id}/path/p_<ts>`.
-8. Implementar logs (`obstacle_detected`, `connection_restored`, `mission_completed`).
-9. Implementar fail-safe: buffer em `LittleFS` + flush na reconexao.
-10. Integrar compensacao de correnteza por LOS (Secao 8).
+6. Gerar rota local por waypoints a partir de `target` (sem dependencia de backend).
+7. Implementar envio de telemetria para `/drones/{drone_id}/telemetry` (1-2 s).
+8. Implementar escrita de status em `/drones/{drone_id}/status`.
+9. Implementar registro de `path` em `/missions/{mission_id}/path/p_<ts>`.
+10. Implementar logs (`obstacle_detected`, `connection_restored`, `mission_completed`).
+11. Implementar fail-safe: buffer em `LittleFS` + flush na reconexao.
+12. Integrar compensacao de correnteza por LOS (Secao 8).
 
 Criterio de saida: firmware executa missao completa com retorno de dados e tolerancia a desconexao.
+
+#### 5.1.1 Detalhamento dos passos da sequência de firmware
+1. Toolchain: fixar versoes de board ESP32 e bibliotecas para build reprodutivel.
+2. Wi-Fi/presenca: configurar reconexao automatica e `onDisconnect()` para `online=false`.
+3. Sensores: separar leitura por frequencia para evitar bloqueio do loop principal.
+4. Estados: criar transicoes explicitas com timeout e fallback seguro.
+5. Comando: consumir apenas comandos novos com `command_id` para evitar reprocessamento.
+6. Rota local: gerar waypoints e pernas localmente com base em `origin`, `target` e regras de seguranca.
+7. Telemetria: publicar payload completo a cada 1-2 s e validar campos obrigatorios.
+8. Status: atualizar `nav_state`, `active_leg` e `route_progress` diretamente em `/status`.
+9. Path: registrar pontos com timestamp monotônico e associacao ao `mission_id` ativo.
+10. Logs: padronizar tipos e severidade para auditoria no dashboard.
+11. Fail-safe: persistir rota/estado local, usar hash de pontos para deduplicacao ao flush.
+12. LOS: calibrar `Delta` (5-10m rio), `Kp` (0.1-0.3), `R_switch` (3-6m), `leg_timeout` (30s).
+
+**Algoritmo de geracao de waypoints (contexto Amazonas):**
+- Entrada: `origin` (lat/lon), `target` (lat/lon), velocidade media estimada do rio (~0.5-1.5 m/s).
+- Estrategia: interpolacao linear com N-1 waypoints intermediarios (ex. N=3 para rota ~1-2 km).
+- Adaptacao: reduzir `R_switch` se correnteza local forte (estimada por `|COG - heading| > 10°`).
+- Timeout de perna: 30s maximo em `R_switch` antes de forcar avanço (proteção contra corrente paralisante).
+- Codigo pseudo: `for i in range(N): WP[i] = origin + (target - origin) * (i / (N-1))`.
+
+#### 5.1.2 Sequencia de navegacao por waypoints e controle de perna
+1. Definir estrutura local da rota como fila ordenada de waypoints, gerada no firmware.
+2. Inicializar `leg_index = 0` e ativar perna `WP_0 -> WP_1`.
+3. Em cada ciclo de controle, calcular `gamma_p`, erro transversal `e_ct` e `chi_d` (LOS).
+4. Converter `chi_d` em `psi_ref` com compensação estimada de correnteza (`beta_hat`).
+5. Aplicar controle diferencial PWM até entrar no raio de troca (`R_switch`) do `WP_{i+1}`.
+6. Ao atingir `R_switch`, **disparar timer de 30s**; se permanecer em `R_switch` apos timeout, forcar avanço de `leg_index`.
+7. Encerrar a missão quando o último waypoint for atingido e publicar `mission_completed`.
+8. Registrar pontos em `path` com chave temporal para preservar histórico completo de pernas.
+
+Criterio de aceite: completar rota com pelo menos 3 waypoints, transição automática entre pernas e fechamento de missão sem intervenção manual.
 
 ### 5.2 Sequencia Backend/Cloud (Firebase RTDB)
 1. Publicar schema canonico do RTDB.
@@ -268,23 +320,43 @@ Criterio de saida: firmware executa missao completa com retorno de dados e toler
 3. Criar indices de consulta para `missions` e `logs`.
 4. Validar `onDisconnect()` para status de presenca.
 5. Configurar politica de retencao para logs.
-6. Opcional: bridge RTDB <-> MQTT para telemetria de baixa latencia no dashboard.
+6. Persistir rota observada e metadados da missao para auditoria e monitoramento.
 
 Criterio de saida: backend seguro, performatico e com contrato de dados estavel.
+
+#### 5.2.1 Detalhamento dos passos da sequência de backend/cloud
+1. Schema: congelar paths e tipos para evitar quebra de integracao entre camadas.
+2. Rules: limitar escrita de status/telemetria ao firmware e comando ao frontend.
+3. Indices: priorizar filtros por `drone_id`, `mission_id`, `status` e `timestamp`.
+4. Presenca: testar desconexao real para validar escrita automatica de `online=false`.
+5. Retencao: manter limite de logs e rotina de limpeza para nao degradar leitura.
+6. Missao: armazenar rota/pernas calculadas no firmware para rastreabilidade e analise pos-missao.
 
 ### 5.3 Sequencia Frontend (React + React Leaflet)
 1. Criar app React (Vite) e configurar Firebase SDK.
 2. Implementar autenticacao do operador.
 3. Implementar mapa React Leaflet com marcador do drone.
 4. Implementar painel de telemetria (bateria, obstaculo, modo operacional, atuadores).
-5. Implementar criacao de missao e envio de `new_destination`.
+5. Implementar criacao de missao e envio de `set_destination`.
 6. Implementar botao `emergency_stop`.
 7. Implementar renderizacao de `path` em tempo real.
 8. Implementar painel de logs e alertas visuais.
-9. Integrar stream MQTT no gemeo digital React (quando habilitado no backend).
+9. Implementar visualizacao de progresso de rota (`active_leg`, `route_progress`).
 10. Testar fluxo de ponta a ponta com hardware real.
 
 Criterio de saida: operador consegue comandar missao e monitorar estado em tempo real.
+
+#### 5.3.1 Detalhamento dos passos da sequência de frontend
+1. Bootstrap: padronizar estrutura React e separar modulos por dominio (mapa, telemetria, missao, logs).
+2. Auth: proteger rotas do dashboard e bloquear escrita sem usuario autenticado.
+3. Mapa: centralizar no rio alvo e manter marcador orientado por heading.
+4. Telemetria: renderizar atualizacao reativa sem travar a UI em bursts de dados.
+5. Destino: enviar apenas coordenada final da missao, sem editor manual de waypoints.
+6. Safety: confirmar acao critica de `emergency_stop` com feedback imediato de UI.
+7. Path: desenhar trilha incremental por `onChildAdded` para evitar recarga completa.
+8. Logs: categorizar eventos e destacar alarmes de obstaculo/conectividade.
+9. Progresso: exibir perna ativa e percentual da rota para leitura operacional.
+10. E2E: validar ciclo completo em bancada e em agua com evidencias registradas.
 
 ## 6. Contrato de Dados (RTDB)
 
@@ -310,11 +382,8 @@ Path: `/drones/{drone_id}/telemetry`
   "position": { "lat": -3.1019, "lon": -60.0250, "heading": 145.2 },
   "sensors": { "battery_mv": 7400, "obs_dist": 120 },
   "actuators": { "thrust_l": 80, "thrust_r": 45 },
-  "status": {
-    "op_mode": "following_route",
-    "mission_id": "m_1710624000",
-    "timestamp": 1710624000
-  }
+  "mission_id": "m_1710624000",
+  "timestamp": 1710624000
 }
 ```
 
@@ -323,10 +392,24 @@ Path: `/drones/{drone_id}/command`
 
 ```json
 {
+  "command_id": "cmd_1710624000",
   "target": { "lat": -3.1050, "lon": -60.0300 },
   "mission_id": "m_1710624000",
-  "cmd_type": "new_destination",
+  "cmd_type": "set_destination",
   "issued_at": 1710624000
+}
+```
+
+Regra do MVP: frontend envia apenas o destino final. Waypoints sao calculados automaticamente e publicados na missao.
+
+Comando de seguranca:
+
+```json
+{
+  "command_id": "cmd_1710624900",
+  "mission_id": "m_1710624000",
+  "cmd_type": "emergency_stop",
+  "issued_at": 1710624900
 }
 ```
 
@@ -340,6 +423,16 @@ Path: `/missions/{mission_id}`
   "status": "active",
   "origin": { "lat": -3.1019, "lon": -60.0250 },
   "target": { "lat": -3.1050, "lon": -60.0300 },
+  "route": {
+    "source": "firmware_autonomous",
+    "version": 1,
+    "active_leg": 0,
+    "points": [
+      { "idx": 0, "lat": -3.1019, "lon": -60.0250 },
+      { "idx": 1, "lat": -3.1035, "lon": -60.0268 },
+      { "idx": 2, "lat": -3.1050, "lon": -60.0300 }
+    ]
+  },
   "path": {
     "p_1710624001": { "lat": -3.1019, "lon": -60.0250, "ts": 1710624001 }
   }
@@ -360,33 +453,68 @@ Path: `/logs/{log_id}`
 }
 ```
 
-## 7. Telemetria MQTT para Gemeo Digital (React)
-Uso recomendado para baixa latencia no dashboard sem substituir o RTDB como fonte oficial de persistencia.
+### 6.6 Status operacional (canonico)
+Path: `/drones/{drone_id}/status`
 
-### 7.1 Topicos sugeridos
-- `usv/drone_01/telemetry`
-- `usv/drone_01/status`
-- `usv/drone_01/alerts`
-
-### 7.2 Payload sugerido
 ```json
 {
-  "ts": 1710624000,
-  "lat": -3.1019,
-  "lon": -60.0250,
-  "heading": 145.2,
-  "battery_mv": 7400,
-  "obs_dist_cm": 120,
-  "op_mode": "following_route"
+  "online": true,
+  "last_seen": 1710624050,
+  "active_mission_id": "m_1710624000",
+  "nav_state": "NAVIGATING_TO_GOAL",
+  "active_leg": 1,
+  "route_progress": 0.52,
+  "last_position": { "lat": -3.1020, "lon": -60.0255 }
 }
 ```
 
-### 7.3 Estrategia de integracao
-- Firmware publica no broker MQTT.
-- Backend opcionalmente faz bridge para RTDB.
-- Frontend React assina topicos e atualiza mapa/paineis em tempo real.
+Valores de `nav_state` no MVP:
+- `NAVIGATING_TO_GOAL` (em navegacao)
+- `IDLE_HOLDING_POSITION` (ocioso mantendo localizacao)
+- `OBSTACLE_AVOIDANCE` (desviando de obstaculo)
+- `RETURNING_TO_HOME` (retornando para origem)
 
-## 8. Compensacao de Correnteza (LOS + NEO-6M)
+## 7. Comunicacao Firmware <-> RTDB (RTDB-only)
+
+### 7.0 Garantia de autonomia offline
+O firmware **NUNCA** depende do backend para continuar navegacao. Apos receber `set_destination` e gerar `route.points` localmente, o firmware pode permanecer offline indefinidamente e completar a rota. Backend e frontend existem para **monitoramento**, nao para pilotagem.
+
+### 7.1 Recebimento de comandos no firmware
+- Abrir stream em `/drones/{drone_id}/command`.
+- Processar apenas comandos com `command_id` novo.
+- Comandos suportados no MVP: `set_destination` e `emergency_stop`.
+
+### 7.2 Carga de rota automatica
+- Apos `set_destination`, gerar rota local por waypoints no firmware.
+- **Publicar `route.points` em `/missions/{mission_id}/route` em < 500ms** para que frontend/backend saibam a rota autonoma.
+- Persistir `route.points` em `/missions/{mission_id}/route` para monitoramento e auditoria.
+- Salvar copia local da rota para manter autonomia em perda de conexao.
+- Inicializar execucao em `active_leg = 0`.
+
+### 7.3 Publicacao de dados pelo firmware
+- Telemetria: `setJSON` em `/drones/{drone_id}/telemetry` a cada 1-2 s.
+- Status: `set` em `/drones/{drone_id}/status` em cada mudanca de estado/perna e ao fim da rota.
+- Status: incluir `online`, `nav_state`, `active_leg`, `route_progress` e `last_position` em uma unica escrita para atomicidade.
+- Path: `setJSON` em `/missions/{mission_id}/path/p_<ts>` durante navegacao.
+- Logs: `pushJSON` em `/logs` para eventos operacionais.
+
+**Deduplicacao de path offline:**
+- Ao reconectar, firmware calcula hash SHA256 dos ultimos 5 pontos ja gravados em RTDB.
+- Compara com buffer LittleFS: se primeiros 5 pontos coincidem, inicia flush a partir do 6º ponto.
+- Se hash diverge, recomeca flush do primeiro ponto com novo timestamp.
+- Exemplo: `hash(path[0..4]) == hash(LittleFS[0..4])` -> continue a partir de `path[5]`.
+
+### 7.4 Presenca e fail-safe
+- Configurar `onDisconnect()` para escrever `online=false` em `/drones/{drone_id}/status`.
+- Em reconexao, restaurar `online=true`, atualizar `last_seen` e executar flush do `LittleFS`.
+- **A escrita de `online` é atomica com o resto do status para evitar leitura parcial.**
+
+### 7.5 Autoridade de status
+- O firmware e a fonte de verdade para `nav_state`, `active_leg`, `route_progress` e status da missao.
+- Frontend nao escreve status operacional do drone.
+- Ao concluir a rota, firmware muda `nav_state` para `IDLE_HOLDING_POSITION` e continua enviando localizacao.
+
+## 15. Compensacao de Correnteza (LOS + NEO-6M)
 
 ### 8.1 Objetivo
 Reduzir erro lateral de trajeto em rios com correnteza, mantendo a embarcacao proxima da linha entre origem e destino.
@@ -423,60 +551,708 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 - Em trecho com correnteza leve/moderada, manter erro transversal medio abaixo do limite definido pelo grupo (ex.: <= 2.5 m em trecho de teste).
 - Registrar comparativo `sem compensacao` vs `com LOS + beta_hat`.
 
-## 9. Cronograma de Execucao (28/03/2026 ate 18/06/2026)
+## 14. Cronograma de Execucao Detalhado (28/03/2026 ate 18/06/2026)
 
-| Periodo | Janela | Camada foco | Entregavel | Criterio de aceite |
+**INICIO REAL: 28/03/2026 (HOJE)**  
+**HARDWARE ESPERADO: ~28/04/2026**  
+**DEADLINE MVP: 18/06/2026**  
+**DESENVOLVIMENTO: PARALELO (Firmware + Backend + Frontend)**
+
+### Visao Geral
+
+| Fase | Datas | Duracao | Status | Hardware |
 |---|---|---|---|---|
-| F0 | 28/03 a 03/04 | Base comum | Repo, ambiente, schema inicial, hardware energizado | Equipe acessa RTDB e hardware liga estavel |
-| F1 | 04/04 a 17/04 | Firmware | Sensores integrados + stream comando + telemetria basica | Dados chegando no RTDB a cada 1-2 s |
-| F2 | 18/04 a 01/05 | Backend/Cloud | Rules, indices, presenca (`onDisconnect`) | Leitura/escrita por perfil validada |
-| F3 | 02/05 a 15/05 | Frontend React | Dashboard inicial + mapa + envio de destino | Operador cria missao e acompanha drone |
-| F4 | 16/05 a 29/05 | Integracao | Path em tempo real, logs, emergency stop | Fluxo ponta a ponta sem travamentos |
-| F5 | 30/05 a 10/06 | Controle avancado | LOS + compensacao de correnteza com NEO-6M | Erro transversal reduzido em teste comparativo |
-| F6 | 11/06 a 18/06 | Validacao MVP | Testes finais, ajustes, documentacao de evidencias | MVP validado dentro do projeto academico |
+| **F0** | 28/03-31/03 | 4 dias | Fundação (repo+RTDB+design) | ❌ Não chegou |
+| **F1** | 01/04-24/04 | 3.5 sem | Dev paralelo c/ mocks | ❌ Não chegou |
+| **F2** | 25/04-08/05 | 2 sem | Integração hardware | ✅ Chegou 28/04 |
+| **F3** | 09/05-22/05 | 2 sem | Ponta-a-ponta | ✅ Testando |
+| **F4** | 23/05-05/06 | 2 sem | Refino (LOS+dedup) | ✅ Validando |
+| **F5** | 06/06-18/06 | 2 sem | Testes finais em rio | ✅ MVP pronto |
 
-## 10. Plano de Testes e Validacao do MVP
+---
 
-### 10.1 Testes obrigatorios
-1. Telemetria continua por pelo menos 15 min sem queda logica.
-2. Criacao de missao e atualizacao de rota no mapa em tempo real.
-3. Acionamento de `emergency_stop` com transicao de estado correta.
-4. Perda e retorno de conectividade com flush correto do `LittleFS`.
-5. Deteccao de obstaculo com registro em `/logs`.
-6. Validacao de compensacao de correnteza em percurso de teste.
+## 14.1 FASE F0: Fundação (28/03-31/03) - 4 DIAS
 
-### 10.2 Evidencias minimas
-- Capturas de tela do dashboard React.
-- Export de logs do RTDB.
-- Trilha de `path` antes/depois da compensacao LOS.
-- Video curto de um ciclo completo de missao.
+**Objetivos:** Repo + RTDB + Design Frontend
 
-## 11. Comandos rapidos (setup base)
+### 28/03 (HOJE)
+- [ ] GitHub: criar repo `USVs-Drone-Fluvial-Autonomo` com branches (`main`, `dev`, `feature/*`)
+- [ ] Estrutura: pastas `/firmware`, `/backend`, `/frontend`, `/docs`, `/design`
+- [ ] Firebase: provisionar projeto RTDB, Auth, gerar seed schema
+- [ ] React: `npm create vite@latest frontend -- --template react`
+- [ ] Reunião: kick-off da equipe, alinhamento de cronograma
 
-### 11.1 Frontend React
-```bash
-npm create vite@latest frontend -- --template react
-cd frontend
-npm install
-npm install firebase react-leaflet leaflet mqtt
-npm run dev
+### 29/03-30/03
+- [ ] **Frontend Design:** Criar wireframes/mockups do dashboard
+  - Mapa Leaflet (centro, legenda, marcador drone)
+  - Painel de telemetria (bateria, obstáculo, modo operacional)
+  - Painel de logs (tabela com categoria/timestamp)
+  - Botões (set_destination, emergency_stop)
+  - Indicador de progresso (`active_leg`, `route_progress`)
+- [ ] Ferramentas: usar Figma (grátis) ou papel/Miro
+- [ ] **Firmware:** Setup Arduino IDE 2.x + ESP32 board package
+- [ ] **Backend:** Validar contrato de dados em equipe
+
+### 31/03
+- [ ] **Reunião de alinhamento:** Confirmar design, cronograma, decisões técnicas
+- [ ] **Daily standup:** Kickoff das 3 trilhas (Firmware, Backend, Frontend)
+- [ ] **Merge:** PRs iniciais mergeadas em `dev`
+
+**Critério F0:**
+- ✅ Repo GitHub com estrutura pronta
+- ✅ Firebase RTDB com seed schema
+- ✅ Projeto React rodando
+- ✅ Wireframes/mockups do dashboard (v1)
+- ✅ Equipe alinhada no cronograma
+
+---
+
+## 14.2 FASE F1: Desenvolvimento Paralelo (01/04-24/04) - 3.5 SEMANAS
+
+**Objetivo:** Tudo pronto para receber hardware (todas as funcionalidades mockadas)
+
+### Semana 1: 01/04-07/04
+
+**FIRMWARE (Sem hardware):**
+- [ ] 01/04: Setup + toolchain (Arduino IDE 2.x, libraries: TinyGPS++, Firebase-ESP-Client, LittleFS)
+- [ ] 02/04: Simulação GPS: mock de dados NMEA
+- [ ] 03/04: Máquina de estados básica (IDLE → NAVIGATING → IDLE)
+- [ ] 04/04: Conexão Wi-Fi + Firebase SDK
+- [ ] 05/04: Stream `/drones/{id}/command` (mock)
+- [ ] 06/04: Telemetria mock → `/drones/{id}/telemetry`
+- [ ] 07/04: Teste: telemetria em tempo real no RTDB ✅
+
+**BACKEND (Setup regras):**
+- [ ] 01/04: Security Rules (firmware, frontend, admin roles)
+- [ ] 02/04: Índices para missions/logs
+- [ ] 03/04: Testar permissões (Postman/Console)
+- [ ] 04/04: `onDisconnect()` → `online=false`
+- [ ] 05/04: Retenção de logs (política)
+- [ ] 06/04: Documento `database_reference.md`
+- [ ] 07/04: Teste: firmware escreve, frontend lê ✅
+
+**FRONTEND (React prototipagem):**
+- [ ] 01/04: Estrutura React (modulos: mapa, telemetria, missão, logs)
+- [ ] 02/04: Firebase SDK + Auth (login básico)
+- [ ] 03/04: React Leaflet: mapa centrado no rio (Manaus)
+- [ ] 04/04: Painel telemetria (mock data)
+- [ ] 05/04: Botão `set_destination` (cria missão)
+- [ ] 06/04: Listener de telemetria real
+- [ ] 07/04: Visualizar marcador se movendo (mock) ✅
+
+**Deliverable S1:** Prototipo funcional com mock data
+
+---
+
+### Semana 2: 08/04-14/04
+
+**FIRMWARE:**
+- [ ] 08/04: Algoritmo de waypoints (interpolação linear)
+- [ ] 09/04: `nav_state` em `/drones/{id}/status`
+- [ ] 10/04: Autonomia offline: gerar rota, navegar local
+- [ ] 11/04: `LittleFS`: salvar/ler buffer offline
+- [ ] 12/04: Path: registrar pontos `p_<ts>`
+- [ ] 13/04: Logs: `obstacle_detected`, `mission_completed`
+- [ ] 14/04: Teste: ciclo completo offline → reconectar ✅
+
+**BACKEND:**
+- [ ] 08/04: Revisar logs de Semana 1
+- [ ] 09/04: Otimizar queries/índices
+- [ ] 10/04: Dashboard RTDB (view monitoramento)
+- [ ] 11/04: Simular deduplicação path
+- [ ] 12/04: Validar contrato Firmware ↔ Backend
+- [ ] 13/04: Mock data para testes Frontend
+- [ ] 14/04: Reunião: integração Firmware-Backend ✅
+
+**FRONTEND:**
+- [ ] 08/04: Polir design final (cores, layout, responsive)
+- [ ] 09/04: Visualizar `route.points` no mapa
+- [ ] 10/04: Painel logs dinâmico (categoria, timestamp)
+- [ ] 11/04: Indicador `nav_state` + `active_leg`
+- [ ] 12/04: Botão `emergency_stop` com confirmação
+- [ ] 13/04: Teste responsividade (mobile/tablet)
+- [ ] 14/04: Integração dados reais RTDB (no mock) ✅
+
+**Deliverable S2:** Frontend prototipo completo + Firmware autonomia offline
+
+---
+
+### Semana 3: 15/04-21/04
+
+**FIRMWARE:**
+- [ ] 15/04: LOS básico (sem beta_hat)
+- [ ] 16/04: Timeout leg (30s em R_switch)
+- [ ] 17/04: Deduplicação path (hash SHA256)
+- [ ] 18/04: Code review Firmware
+- [ ] 19/04: Preparar pinagem ESP32 para hardware real
+- [ ] 20/04: Teste final: tudo mockado funciona?
+- [ ] 21/04: Merge para `main` ✅
+
+**BACKEND:**
+- [ ] 15/04: Testes de carga (100+ telemetrias/min)
+- [ ] 16/04: Validar schema vs dados reais
+- [ ] 17/04: Backup automático
+- [ ] 18/04: Analytics: pontos/path, tempo médio
+- [ ] 19/04: Documentar deployment Firebase
+- [ ] 20/04: Teste: falha intencional + recovery
+- [ ] 21/04: Merge para `main` ✅
+
+**FRONTEND:**
+- [ ] 15/04: Polir UX (feedbacks, confirmações, loading)
+- [ ] 16/04: Visualizar `route_progress` (barra)
+- [ ] 17/04: Teste: recarregar página, dados mantêm?
+- [ ] 18/04: Otimização: virtual scrolling (logs grandes)
+- [ ] 19/04: Acessibilidade (contraste, navegação teclado)
+- [ ] 20/04: Testes E2E (Cypress/Playwright)
+- [ ] 21/04: Merge para `main` ✅
+
+**Deliverable S3:** Tudo pronto para hardware (28/04)
+
+---
+
+### Semana 3.5: 22/04-24/04
+
+**TODOS:**
+- [ ] 22/04: Preparar ambiente testes hardware
+- [ ] 23/04: Revisar guias montagem + pinagem
+- [ ] 24/04: Final checks + documentação
+
+**Critério F1:**
+- ✅ Firmware 100% mockado, todas as funcionalidades
+- ✅ Backend com regras, índices, validação
+- ✅ Frontend design final + painéis funcionando
+- ✅ Aguardando hardware em 28/04
+
+---
+
+## 14.3 FASE F2: Integração com Hardware (25/04-08/05) - 2 SEMANAS
+
+**28/04: HARDWARE CHEGA**
+
+### Semana 1: 25/04-30/04
+
+**FIRMWARE:**
+- [ ] 25-27/04: Aguardar hardware, refinar mocks
+- [ ] **28/04:** Hardware chega → validar recebimento
+- [ ] 29/04: Montagem básica (ESP32 + GPS + Bussola)
+- [ ] 30/04: Upload código real no ESP32
+- [ ] 01/05: Testes: ler GPS real, bussola real
+- [ ] 02/05: Integrar ultrassom
+- [ ] 03/05: Teste piscina/bacia (não rio ainda)
+- [ ] 04/05: Calibração sensores
+
+**BACKEND:**
+- [ ] 25/04: Preparar dados reais para teste
+- [ ] 28/04: Monitorar RTDB para dados reais
+- [ ] 29/04: Validar telemetria tempo real
+- [ ] 30/04: Revisar logs/erros
+- [ ] 01/05: Ajustar retenção conforme volume
+- [ ] 02/05: Teste presença online/offline real
+- [ ] 03/04: Validar dedup com dados reais
+- [ ] 04/05: Otimizar índices
+
+**FRONTEND:**
+- [ ] 25/04: Testes finais com mock
+- [ ] 28/04: Ligar dashboard, aguardar dados reais
+- [ ] 29/04: Marcar posição real do drone
+- [ ] 30/04: Validar fluxo criação missão
+- [ ] 01/05: Teste `emergency_stop` (seguro)
+- [ ] 02/05: Revisar indicadores (bateria, obstáculo)
+- [ ] 03/05: Teste responsividade com dados reais
+- [ ] 04/05: Bug fixes
+
+**Deliverable S1:** Hardware funcional + telemetria real
+
+---
+
+### Semana 2: 05/05-08/05
+
+**FIRMWARE:**
+- [ ] 05/05: Waypoints com dados reais
+- [ ] 06/05: Teste navegação piscina (3 waypoints)
+- [ ] 07/05: LOS básico (sem compensação)
+- [ ] 08/05: Path real em `/missions/{id}/path` ✅
+
+**BACKEND:**
+- [ ] 05/05: Validar volume dados
+- [ ] 06/05: Testes escala
+- [ ] 07/05: Relatório performance
+- [ ] 08/05: Reunião: pronto para integração? ✅
+
+**FRONTEND:**
+- [ ] 05/05: Visualizar `route.points` no mapa
+- [ ] 06/05: Rota em tempo real
+- [ ] 07/05: Painel logs com eventos reais
+- [ ] 08/05: Teste fluxo completo (inicio→fim) ✅
+
+**Critério F2:**
+- ✅ Hardware montado e funcional
+- ✅ Telemetria real fluindo
+- ✅ Frontend mostrando dados reais
+- ✅ Navegação simples funciona
+
+---
+
+## 14.4 FASE F3: Integração Ponta-a-Ponta (09/05-22/05)
+
+**FIRMWARE:**
+- [ ] 09/05-15/05: LOS básico (sem beta_hat)
+- [ ] 16/05-22/05: Testes rota: navegação linha reta funciona? ✅
+
+**BACKEND:**
+- [ ] Validar dados LOS (atan2, e_ct, chi_d)
+- [ ] Monitorar dedup real
+
+**FRONTEND:**
+- [ ] Visualizar `active_leg` tempo real
+- [ ] Teste rota completa no mapa
+
+**Critério F3:**
+- ✅ Navegação simples ponta-a-ponta
+- ✅ LOS básico funciona
+- ✅ Rota visível no mapa
+
+---
+
+## 14.5 FASE F4: Refinamento Avançado (23/05-05/06)
+
+**FIRMWARE:**
+- [ ] Implementar `beta_hat` (compensação correnteza)
+- [ ] Timeout leg (30s)
+- [ ] Dedup path (hash SHA256)
+- [ ] Testes rio (ou simulação correnteza)
+
+**BACKEND:**
+- [ ] Análise correnteza (COG vs heading)
+- [ ] Otimizações finais
+
+**FRONTEND:**
+- [ ] Visualizar correnteza estimada
+- [ ] Dashboard final
+
+**Critério F4:**
+- ✅ Navegação avançada com compensação
+- ✅ Timeout leg funciona
+- ✅ Dedup validado
+
+---
+
+## 14.6 FASE F5: Validação e Testes Finais (06/06-18/06)
+
+**Testes em rio (critérios do MVP):**
+1. Autonomia offline
+2. Emergency stop
+3. Desvio obstáculo
+4. Retorno origem
+5. Security Rules
+6. Waypoints adaptativos
+
+**Evidências:**
+- Videos
+- Logs finais
+- Relatório técnico
+
+**Critério F5:**
+- ✅ MVP 100% validado
+- ✅ Pronto para apresentação
+
+## 15. Design e Prototipagem do Frontend React
+
+### 15.1 Filosofia de Design
+
+O dashboard segue o paradigma de **carro autônomo em rio**: o operador **observa**, não pilota manualmente. Interface minimalista, com foco em indicadores de estado, visualização de rota e logs de eventos.
+
+**Princípios:**
+- Mapa sempre visível (70% da tela)
+- Telemetria em painel lateral (direita)
+- Logs em abas inferiores
+- Botões de ação grandes e confirmados
+- Responsivo para tablet (operador em rio)
+
+---
+
+### 15.2 Wireframes / Layout Geral
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Logo | Drone: drone_01 | Status: ONLINE | User: [operador] │
+├──────────────────────┬────────────────────────────────────────┤
+│                      │  TELEMETRIA (Painel Lateral Direito)   │
+│                      │  ┌──────────────────────────────────┐  │
+│    MAPA (70%)        │  │ Bateria: ████████░ 75%          │  │
+│   React Leaflet      │  │ Modo: NAVIGATING_TO_GOAL         │  │
+│   Centrado Rio       │  │ Perna: 2/3  [████░░░░░ 50%]    │  │
+│   Marcador Drone     │  │ Obstáculo: 1.2m (OK)            │  │
+│   Rota em azul       │  │ Motores L: 75  R: 65 (PWM)       │  │
+│   Waypoints          │  │ Último update: 2s atrás          │  │
+│                      │  │                                  │  │
+│                      │  │ [set_destination]  [e-stop]      │  │
+│                      │  └──────────────────────────────────┘  │
+├──────────────────────┴────────────────────────────────────────┤
+│  LOGS / EVENTOS                                               │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ [All] [Warnings] [Errors]                           ^ v │ │
+│  │ 14:35 - NAVIGATING_TO_GOAL | leg_index = 1          │ │
+│  │ 14:32 - obstacle_detected | dist=0.8m               │ │
+│  │ 14:28 - connection_restored | RTDB sync             │ │
+│  │ 14:20 - mission_started | 3 waypoints queued        │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### 11.2 Backend (Firebase)
-```bash
-npm install -g firebase-tools
-firebase login
-firebase init
-firebase deploy --only database
+---
+
+### 15.3 Componentes React (Estrutura de Modulos)
+
+```
+/frontend/src/
+├── components/
+│   ├── Navbar.jsx            # Barra superior (logo, status, user)
+│   ├── Map.jsx               # Mapa Leaflet + interações
+│   ├── TelemetryPanel.jsx    # Painel lateral direito
+│   │   ├── BatteryGauge.jsx
+│   │   ├── StateIndicator.jsx
+│   │   └── MotorStatus.jsx
+│   ├── Logs.jsx              # Painel logs inferior
+│   │   ├── LogEntry.jsx
+│   │   └── LogFilter.jsx
+│   └── Modals.jsx
+│       ├── SetDestinationModal.jsx
+│       └── ConfirmStopModal.jsx
+├── pages/
+│   └── Dashboard.jsx         # Composição principal
+├── hooks/
+│   ├── useFirebaseAuth.js    # Auth
+│   ├── useFirebaseTelemetry.js
+│   └── useMissionManager.js
+├── services/
+│   ├── firebaseService.js    # RTDB queries
+│   └── geoUtils.js           # Cálculos de distância/azimute
+├── styles/
+│   ├── global.css            # Reset + variáveis
+│   ├── dashboard.css         # Layout principal
+│   └── components.css        # Componentes
+└── App.jsx
 ```
 
-### 11.3 MQTT Broker (local, opcional para testes)
-```bash
-docker run -it --rm -p 1883:1883 eclipse-mosquitto
+---
+
+### 15.4 Detalhamento Visual por Secção
+
+#### **A) NAVBAR (Barra Superior)**
+
+**Conteúdo:**
+- Logo + Título: "USV-AM"
+- Status do drone em tempo real (ONLINE/OFFLINE com cor)
+- ID do drone: `drone_01`
+- Status operacional: `NAVIGATING_TO_GOAL` (cor dinâmica)
+- Nome do operador (logout)
+
+**Cores:**
+- ONLINE: verde (#10b981)
+- OFFLINE: vermelho (#ef4444)
+- NAVIGATING: azul (#3b82f6)
+- IDLE: cinza (#9ca3af)
+- OBSTACLE_AVOIDANCE: laranja (#f59e0b)
+- RETURNING_TO_HOME: amarelo (#eab308)
+
+**Responsive:** Na versão mobile, ícones em vez de textos longos.
+
+---
+
+#### **B) MAPA (React Leaflet)**
+
+**Características:**
+1. **Centro inicial:** Rio Negro, Manaus (-3.1019, -60.0250)
+2. **Zoom:** 14 (nível de detalhe em rio)
+3. **Tiles:** OpenStreetMap (padrão)
+4. **Marcador drone:**
+   - Ícone customizado (⛵ ou 🤖)
+   - Rotação = `heading` em tempo real
+   - Label: `drone_01`
+5. **Rota visível:**
+   - Polyline azul conectando pontos de `path`
+   - Recarregar incrementalmente por `onChildAdded`
+6. **Waypoints:**
+   - Círculos numerados (1, 2, 3...)
+   - Cor verde (não atingido) → amarelo (perna ativa) → cinza (completo)
+7. **Clique no mapa:** Abre modal `SetDestinationModal`
+8. **Gesturas:** Pan, zoom, dblclick para home
+
+**Performance:** Virtual scrolling de marcadores se houver muitos logs/waypoints.
+
+---
+
+#### **C) PAINEL DE TELEMETRIA (Lateral Direito, ~25% width)**
+
+**Widgets:**
+
+1. **Medidor de Bateria (Gauge)**
+   ```
+   ┌─────────────────┐
+   │    Bateria      │
+   │  ████████░░ 75% │
+   │ 7.4V / 4000mAh  │
+   └─────────────────┘
+   Cores: >70% verde, 30-70% amarelo, <30% vermelho
+   ```
+
+2. **Indicador de Estado (Badge)**
+   ```
+   ┌──────────────────────────────────┐
+   │ NAVIGATING_TO_GOAL               │
+   └──────────────────────────────────┘
+   Fundo dinâmico por nav_state
+   ```
+
+3. **Progresso da Rota (Barra Linear)**
+   ```
+   Perna: 2 / 3
+   [████░░░░░░] 50%
+   ```
+
+4. **Sensor Ultrassônico (Gauge Circular)**
+   ```
+      1.2m
+      /\
+     /  \
+    |    |  OK
+     \  /
+      \/
+   Vermelho se < 50cm
+   ```
+
+5. **Status de Motores (Dois sliders readonlys)**
+   ```
+   Motor L: ████████░░ 75 PWM
+   Motor R: ██████░░░░ 60 PWM
+   ```
+
+6. **Timestamp de última atualização**
+   ```
+   Last update: 2s ago
+   Cor muda para vermelho se > 10s
+   ```
+
+7. **Botões de Ação**
+   ```
+   ┌──────────────────┐  ┌────────────────┐
+   │ Set Destination  │  │ Emergency Stop │
+   └──────────────────┘  └────────────────┘
+   Primária (azul)        Perigo (vermelho)
+   ```
+
+---
+
+#### **D) PAINEL DE LOGS (Inferior, ~15% height)**
+
+**Layout:**
+- 3 abas: [All] [Warnings] [Errors]
+- Tabela com scroll vertical
+- Colunas: **Hora | Tipo | Mensagem | +Info**
+
+**Exemplo:**
+```
+┌──────────────────────────────────────────────────────────┐
+│ [All] [⚠️ 2] [❌ 0]                                    ^ v│
+├──────────────────────────────────────────────────────────┤
+│ 14:35 | NAV       | NAVIGATING_TO_GOAL / leg 1/3       │
+│ 14:32 | ⚠️ OBS    | obstacle_detected @ 0.8m [-3.10]   │
+│ 14:28 | ✅ CONN   | connection_restored / sync complete│
+│ 14:20 | MISSION   | mission_started / 3 waypoints      │
+└──────────────────────────────────────────────────────────┘
 ```
 
-## 12. Backlog pos-MVP
-- Navegacao remota por controle manual continuo de direcao.
-- Calculo automatico de distancia percorrida e ETA por missao.
-- Planejamento de multiplos waypoints com controle de transicao por perna.
-- Refino do controlador (PID completo com anti-windup e filtro de rumo).
+**Tipos de eventos (cores):**
+- NAV: azul
+- OBS: laranja
+- CONN: verde
+- EMERGENCY: vermelho
+- MISSION: roxo
+
+---
+
+#### **E) MODAIS (Pop-ups)**
+
+**1. Set Destination Modal**
+```
+┌─────────────────────────────────────┐
+│   Definir Novo Destino              │
+├─────────────────────────────────────┤
+│ Latitude:  [ -3.1050________]       │
+│ Longitude: [ -60.0300_______]       │
+│                                     │
+│ ou clique no mapa                   │
+│                                     │
+│ Previsão de tempo: ~3 min           │
+│ Distância: 500 m                    │
+│                                     │
+│   [Cancelar]  [Confirmar Destino]   │
+└─────────────────────────────────────┘
+```
+
+**2. Emergency Stop Confirmation Modal**
+```
+┌─────────────────────────────────────┐
+│   ⚠️ PARAR MISSÃO                   │
+├─────────────────────────────────────┤
+│                                     │
+│  Tem certeza?                       │
+│  O drone retornará para a origem.   │
+│                                     │
+│   [Não, continuar]  [Sim, parar]    │
+└─────────────────────────────────────┘
+```
+
+---
+
+### 15.5 Fluxos de Interação (User Stories)
+
+#### **Cenário 1: Iniciar Missão**
+1. Operador vê mapa carregado, drone em IDLE
+2. Clica em ponto no mapa → modal de confirmação
+3. Insere lat/lon ou confirma do clique
+4. Clica "Confirmar Destino"
+5. Painel telemetria muda para NAVIGATING_TO_GOAL
+6. Rota azul aparece no mapa em tempo real
+7. Marcador drone se move seguindo a rota
+
+#### **Cenário 2: Monitorar Navegação**
+1. Operador observa painel telemetria:
+   - Progresso de perna (2/3)
+   - Status de motores (L: 75 PWM, R: 65 PWM)
+   - Bateria em queda (agora 65%)
+2. Se obstáculo: indicador muda para laranja, log aparece
+3. Ao atingir waypoint: perna avança automaticamente
+4. Ao fim: nav_state muda para IDLE_HOLDING_POSITION
+
+#### **Cenário 3: Emergency Stop**
+1. Operador vê risco
+2. Clica "Emergency Stop"
+3. Modal de confirmação aparece
+4. Confirma
+5. nav_state muda para RETURNING_TO_HOME
+6. Drone retorna para `origin`
+7. Log aparece: "emergency_stop @ 14:35"
+
+---
+
+### 15.6 Detalhamento de Implementação (Código Estrutura)
+
+#### **Hooks Principais**
+
+**useFirebaseTelemetry.js:**
+```javascript
+export function useFirebaseTelemetry(droneId) {
+  const [telemetry, setTelemetry] = useState(null);
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    // Listener em /drones/{droneId}/telemetry
+    onValue(ref(db, `drones/${droneId}/telemetry`), (snapshot) => {
+      setTelemetry(snapshot.val());
+    });
+
+    // Listener em /drones/{droneId}/status
+    onValue(ref(db, `drones/${droneId}/status`), (snapshot) => {
+      setStatus(snapshot.val());
+    });
+  }, [droneId]);
+
+  return { telemetry, status };
+}
+```
+
+**useMissionManager.js:**
+```javascript
+export function useMissionManager(droneId) {
+  const [mission, setMission] = useState(null);
+  const [path, setPath] = useState([]);
+
+  const setDestination = async (lat, lon) => {
+    const mission_id = `m_${Math.floor(Date.now() / 1000)}`;
+    
+    // Criar missão
+    await set(ref(db, `missions/${mission_id}`), {
+      drone_id: droneId,
+      start_time: Date.now(),
+      status: 'active',
+      origin: await getDronePosition(), // última posição conhecida
+      target: { lat, lon }
+    });
+
+    // Enviar comando
+    await set(ref(db, `drones/${droneId}/command`), {
+      command_id: `cmd_${Date.now()}`,
+      target: { lat, lon },
+      mission_id,
+      cmd_type: 'set_destination',
+      issued_at: Date.now()
+    });
+  };
+
+  const emergencyStop = async (mission_id) => {
+    await set(ref(db, `drones/${droneId}/command`), {
+      command_id: `cmd_${Date.now()}`,
+      mission_id,
+      cmd_type: 'emergency_stop',
+      issued_at: Date.now()
+    });
+  };
+
+  return { mission, path, setDestination, emergencyStop };
+}
+```
+
+---
+
+### 15.7 Paleta de Cores e Tipografia
+
+**Cores (Tailwind CSS):**
+- Primária: `#3b82f6` (azul)
+- Perigo: `#ef4444` (vermelho)
+- Sucesso: `#10b981` (verde)
+- Aviso: `#f59e0b` (laranja)
+- Neutra: `#9ca3af` (cinza)
+
+**Tipografia:**
+- Sans-serif: `Inter` ou `Roboto`
+- Tamanho base: 14px
+- Headings: 16px (navbar), 14px (painéis)
+- Monospace para valores numéricos: `Fira Code`
+
+---
+
+### 15.8 Cronograma de Implementação (Detalhado em F1)
+
+| Semana | Tarefa | Status |
+|---|---|---|
+| S1 | Estrutura React + Firebase Auth + Mapa base | 07/04 ✅ |
+| S2 | Painel telemetria + Logs dinâmicos | 14/04 ✅ |
+| S3 | Modais + Handlers + Polish UX | 21/04 ✅ |
+| F2 | Testes com dados reais + Bug fixes | 08/05 ✅ |
+
+---
+
+### 15.9 Checklist de Componentes (MVP)
+
+**OBRIGATÓRIO:**
+- [ ] Navbar com status online/offline
+- [ ] Mapa centrado no rio com marcador drone
+- [ ] Polyline de rota em tempo real
+- [ ] Painel telemetria (bateria, modo, perna, obstáculo)
+- [ ] Botão set_destination (cria missão)
+- [ ] Botão emergency_stop (com confirmação)
+- [ ] Painel logs com filtro
+- [ ] Responsividade (desktop + tablet)
+
+**DESEJÁVEL (Se tempo permitir):**
+- [ ] Gráfico de histórico de bateria
+- [ ] Zoom automático em rota
+- [ ] Autocomplete de coordenadas (lugares conhecidos)
+- [ ] Dark mode
+
+**NÃO INCLUSO (Backlog):**
+- Editor manual de waypoints
+- Planejamento automático de rota (será no firmware)
+- Simulação 3D
