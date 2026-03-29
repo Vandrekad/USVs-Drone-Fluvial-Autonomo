@@ -551,310 +551,131 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 - Em trecho com correnteza leve/moderada, manter erro transversal medio abaixo do limite definido pelo grupo (ex.: <= 2.5 m em trecho de teste).
 - Registrar comparativo `sem compensacao` vs `com LOS + beta_hat`.
 
-## 14. Cronograma de Execucao Detalhado (28/03/2026 ate 18/06/2026)
+## 14. Cronograma de Execucao Detalhado (28/03/2026 ate 18/05/2026)
 
 **INICIO REAL: 28/03/2026 (HOJE)**  
 **HARDWARE ESPERADO: ~28/04/2026**  
-**DEADLINE MVP: 18/06/2026**  
+**DEADLINE MVP: 18/05/2026**  
 **DESENVOLVIMENTO: PARALELO (Firmware + Backend + Frontend)**
 
 ### Visao Geral
 
-| Fase | Datas | Duracao | Status | Hardware |
-|---|---|---|---|---|
-| **F0** | 28/03-31/03 | 4 dias | Fundação (repo+RTDB+design) | ❌ Não chegou |
-| **F1** | 01/04-24/04 | 3.5 sem | Dev paralelo c/ mocks | ❌ Não chegou |
-| **F2** | 25/04-08/05 | 2 sem | Integração hardware | ✅ Chegou 28/04 |
-| **F3** | 09/05-22/05 | 2 sem | Ponta-a-ponta | ✅ Testando |
-| **F4** | 23/05-05/06 | 2 sem | Refino (LOS+dedup) | ✅ Validando |
-| **F5** | 06/06-18/06 | 2 sem | Testes finais em rio | ✅ MVP pronto |
+| Fase | Datas | Duracao | Foco |
+|---|---|---|---|
+| **F0** | 28/03-30/03 | 3 dias | Fundacao (repo + RTDB + inicio frontend) |
+| **F1** | 31/03-13/04 | 2 semanas | Desenvolvimento paralelo com mocks |
+| **F2** | 14/04-27/04 | 2 semanas | Preparacao pre-hardware + refinamentos |
+| **F3** | 28/04-07/05 | 10 dias | Integracao com hardware real |
+| **F4** | 08/05-14/05 | 7 dias | Refino final (LOS, dedup, estabilidade) |
+| **F5** | 15/05-18/05 | 4 dias | Validacao final em campo + entrega |
 
 ---
 
-## 14.1 FASE F0: Fundação (28/03-31/03) - 4 DIAS
+## 14.1 FASE F0: Fundacao (28/03-30/03) - 3 DIAS
 
-**Objetivos:** Repo + RTDB + Design Frontend
+**Objetivos:** consolidar base do projeto e alinhar arquitetura.
 
-### 28/03 (HOJE)
-- [ ] GitHub: criar repo `USVs-Drone-Fluvial-Autonomo` com branches (`main`, `dev`, `feature/*`)
-- [ ] Estrutura: pastas `/firmware`, `/backend`, `/frontend`, `/docs`, `/design`
-- [ ] Firebase: provisionar projeto RTDB, Auth, gerar seed schema
-- [ ] React: `npm create vite@latest frontend -- --template react`
-- [ ] Reunião: kick-off da equipe, alinhamento de cronograma
+- [ ] GitHub: repositorio, branches (`main`, `dev`, `feature/*`) e estrutura de pastas.
+- [ ] RTDB/Auth: provisionamento, seed inicial e variaveis seguras.
+- [ ] Frontend: bootstrap React + Vite e estrutura inicial.
+- [ ] Design: wireframe v1 (mapa, telemetria, logs, acoes).
+- [ ] Alinhamento final da equipe sobre schema e fluxo autonomo.
 
-### 29/03-30/03
-- [ ] **Frontend Design:** Criar wireframes/mockups do dashboard
-  - Mapa Leaflet (centro, legenda, marcador drone)
-  - Painel de telemetria (bateria, obstáculo, modo operacional)
-  - Painel de logs (tabela com categoria/timestamp)
-  - Botões (set_destination, emergency_stop)
-  - Indicador de progresso (`active_leg`, `route_progress`)
-- [ ] Ferramentas: usar Figma (grátis) ou papel/Miro
-- [ ] **Firmware:** Setup Arduino IDE 2.x + ESP32 board package
-- [ ] **Backend:** Validar contrato de dados em equipe
-
-### 31/03
-- [ ] **Reunião de alinhamento:** Confirmar design, cronograma, decisões técnicas
-- [ ] **Daily standup:** Kickoff das 3 trilhas (Firmware, Backend, Frontend)
-- [ ] **Merge:** PRs iniciais mergeadas em `dev`
-
-**Critério F0:**
-- ✅ Repo GitHub com estrutura pronta
-- ✅ Firebase RTDB com seed schema
-- ✅ Projeto React rodando
-- ✅ Wireframes/mockups do dashboard (v1)
-- ✅ Equipe alinhada no cronograma
+**Criterio F0:** ambiente pronto, repo organizado, RTDB ativo e frontend iniciando.
 
 ---
 
-## 14.2 FASE F1: Desenvolvimento Paralelo (01/04-24/04) - 3.5 SEMANAS
+## 14.2 FASE F1: Desenvolvimento Paralelo com Mocks (31/03-13/04)
 
-**Objetivo:** Tudo pronto para receber hardware (todas as funcionalidades mockadas)
+### Firmware
+- [ ] Conexao Wi-Fi + stream de comando no RTDB.
+- [ ] Maquina de estados + telemetria mock.
+- [ ] Geracao local de waypoints + `nav_state`.
+- [ ] Buffer `LittleFS` e registro de `path`.
 
-### Semana 1: 01/04-07/04
+### Backend/Cloud
+- [ ] Security Rules por papel (firmware/frontend/admin).
+- [ ] Indices para `missions` e `logs`.
+- [ ] Testes de permissao e `onDisconnect()`.
+- [ ] Politica de retencao de logs.
 
-**FIRMWARE (Sem hardware):**
-- [ ] 01/04: Setup + toolchain (Arduino IDE 2.x, libraries: TinyGPS++, Firebase-ESP-Client, LittleFS)
-- [ ] 02/04: Simulação GPS: mock de dados NMEA
-- [ ] 03/04: Máquina de estados básica (IDLE → NAVIGATING → IDLE)
-- [ ] 04/04: Conexão Wi-Fi + Firebase SDK
-- [ ] 05/04: Stream `/drones/{id}/command` (mock)
-- [ ] 06/04: Telemetria mock → `/drones/{id}/telemetry`
-- [ ] 07/04: Teste: telemetria em tempo real no RTDB ✅
+### Frontend
+- [ ] Mapa React Leaflet + listeners de telemetria.
+- [ ] Painel de status, telemetria e logs com dados mock.
+- [ ] Fluxo `set_destination` e `emergency_stop`.
+- [ ] Responsividade inicial.
 
-**BACKEND (Setup regras):**
-- [ ] 01/04: Security Rules (firmware, frontend, admin roles)
-- [ ] 02/04: Índices para missions/logs
-- [ ] 03/04: Testar permissões (Postman/Console)
-- [ ] 04/04: `onDisconnect()` → `online=false`
-- [ ] 05/04: Retenção de logs (política)
-- [ ] 06/04: Documento `database_reference.md`
-- [ ] 07/04: Teste: firmware escreve, frontend lê ✅
-
-**FRONTEND (React prototipagem):**
-- [ ] 01/04: Estrutura React (modulos: mapa, telemetria, missão, logs)
-- [ ] 02/04: Firebase SDK + Auth (login básico)
-- [ ] 03/04: React Leaflet: mapa centrado no rio (Manaus)
-- [ ] 04/04: Painel telemetria (mock data)
-- [ ] 05/04: Botão `set_destination` (cria missão)
-- [ ] 06/04: Listener de telemetria real
-- [ ] 07/04: Visualizar marcador se movendo (mock) ✅
-
-**Deliverable S1:** Prototipo funcional com mock data
+**Criterio F1:** funcionalidades principais operando com dados mockados de ponta a ponta.
 
 ---
 
-### Semana 2: 08/04-14/04
+## 14.3 FASE F2: Preparacao Pre-Hardware (14/04-27/04)
 
-**FIRMWARE:**
-- [ ] 08/04: Algoritmo de waypoints (interpolação linear)
-- [ ] 09/04: `nav_state` em `/drones/{id}/status`
-- [ ] 10/04: Autonomia offline: gerar rota, navegar local
-- [ ] 11/04: `LittleFS`: salvar/ler buffer offline
-- [ ] 12/04: Path: registrar pontos `p_<ts>`
-- [ ] 13/04: Logs: `obstacle_detected`, `mission_completed`
-- [ ] 14/04: Teste: ciclo completo offline → reconectar ✅
+### Firmware
+- [ ] LOS basico, timeout de perna e deduplicacao de path.
+- [ ] Revisao de pinagem e preparacao de firmware para hardware real.
+- [ ] Testes de autonomia offline e reconexao.
 
-**BACKEND:**
-- [ ] 08/04: Revisar logs de Semana 1
-- [ ] 09/04: Otimizar queries/índices
-- [ ] 10/04: Dashboard RTDB (view monitoramento)
-- [ ] 11/04: Simular deduplicação path
-- [ ] 12/04: Validar contrato Firmware ↔ Backend
-- [ ] 13/04: Mock data para testes Frontend
-- [ ] 14/04: Reunião: integração Firmware-Backend ✅
+### Backend/Cloud
+- [ ] Ajustes de performance e validacao de schema final.
+- [ ] Monitoramento de volume de escrita e leitura.
 
-**FRONTEND:**
-- [ ] 08/04: Polir design final (cores, layout, responsive)
-- [ ] 09/04: Visualizar `route.points` no mapa
-- [ ] 10/04: Painel logs dinâmico (categoria, timestamp)
-- [ ] 11/04: Indicador `nav_state` + `active_leg`
-- [ ] 12/04: Botão `emergency_stop` com confirmação
-- [ ] 13/04: Teste responsividade (mobile/tablet)
-- [ ] 14/04: Integração dados reais RTDB (no mock) ✅
+### Frontend
+- [ ] Polimento de UX/UI e estados de erro/loading.
+- [ ] Testes E2E com dados simulados realistas.
 
-**Deliverable S2:** Frontend prototipo completo + Firmware autonomia offline
+**Criterio F2:** stack estabilizada e pronta para conectar hardware em 28/04.
 
 ---
 
-### Semana 3: 15/04-21/04
+## 14.4 FASE F3: Integracao com Hardware Real (28/04-07/05)
 
-**FIRMWARE:**
-- [ ] 15/04: LOS básico (sem beta_hat)
-- [ ] 16/04: Timeout leg (30s em R_switch)
-- [ ] 17/04: Deduplicação path (hash SHA256)
-- [ ] 18/04: Code review Firmware
-- [ ] 19/04: Preparar pinagem ESP32 para hardware real
-- [ ] 20/04: Teste final: tudo mockado funciona?
-- [ ] 21/04: Merge para `main` ✅
+### Firmware
+- [ ] Montagem e bring-up: ESP32 + GPS + bussola + ultrassom.
+- [ ] Calibracao inicial dos sensores.
+- [ ] Publicacao de telemetria real no RTDB.
 
-**BACKEND:**
-- [ ] 15/04: Testes de carga (100+ telemetrias/min)
-- [ ] 16/04: Validar schema vs dados reais
-- [ ] 17/04: Backup automático
-- [ ] 18/04: Analytics: pontos/path, tempo médio
-- [ ] 19/04: Documentar deployment Firebase
-- [ ] 20/04: Teste: falha intencional + recovery
-- [ ] 21/04: Merge para `main` ✅
+### Backend/Cloud
+- [ ] Validar fluxo real de dados, presenca e logs.
+- [ ] Ajustar indices/regras conforme comportamento observado.
 
-**FRONTEND:**
-- [ ] 15/04: Polir UX (feedbacks, confirmações, loading)
-- [ ] 16/04: Visualizar `route_progress` (barra)
-- [ ] 17/04: Teste: recarregar página, dados mantêm?
-- [ ] 18/04: Otimização: virtual scrolling (logs grandes)
-- [ ] 19/04: Acessibilidade (contraste, navegação teclado)
-- [ ] 20/04: Testes E2E (Cypress/Playwright)
-- [ ] 21/04: Merge para `main` ✅
+### Frontend
+- [ ] Validar mapa com posicao real do drone.
+- [ ] Validar missao fim-a-fim com `set_destination`.
+- [ ] Monitorar `nav_state`, `active_leg` e `route_progress` em tempo real.
 
-**Deliverable S3:** Tudo pronto para hardware (28/04)
+**Criterio F3:** operacao real em bancada/agua calma com telemetria e comando funcionando.
 
 ---
 
-### Semana 3.5: 22/04-24/04
+## 14.5 FASE F4: Refino Final (08/05-14/05)
 
-**TODOS:**
-- [ ] 22/04: Preparar ambiente testes hardware
-- [ ] 23/04: Revisar guias montagem + pinagem
-- [ ] 24/04: Final checks + documentação
+### Firmware
+- [ ] Ajustar compensacao de correnteza (`beta_hat`) para contexto do Amazonas.
+- [ ] Ajustar parametros LOS (`Delta`, `Kp`, `R_switch`) e estabilidade.
+- [ ] Consolidar deduplicacao e fail-safe.
 
-**Critério F1:**
-- ✅ Firmware 100% mockado, todas as funcionalidades
-- ✅ Backend com regras, índices, validação
-- ✅ Frontend design final + painéis funcionando
-- ✅ Aguardando hardware em 28/04
+### Backend/Cloud
+- [ ] Revisao final de regras de seguranca e qualidade de dados.
+- [ ] Validacao de consultas para dashboard.
 
----
+### Frontend
+- [ ] Acabamento visual e operacional do dashboard.
+- [ ] Painel de logs e alertas final para uso em campo.
 
-## 14.3 FASE F2: Integração com Hardware (25/04-08/05) - 2 SEMANAS
-
-**28/04: HARDWARE CHEGA**
-
-### Semana 1: 25/04-30/04
-
-**FIRMWARE:**
-- [ ] 25-27/04: Aguardar hardware, refinar mocks
-- [ ] **28/04:** Hardware chega → validar recebimento
-- [ ] 29/04: Montagem básica (ESP32 + GPS + Bussola)
-- [ ] 30/04: Upload código real no ESP32
-- [ ] 01/05: Testes: ler GPS real, bussola real
-- [ ] 02/05: Integrar ultrassom
-- [ ] 03/05: Teste piscina/bacia (não rio ainda)
-- [ ] 04/05: Calibração sensores
-
-**BACKEND:**
-- [ ] 25/04: Preparar dados reais para teste
-- [ ] 28/04: Monitorar RTDB para dados reais
-- [ ] 29/04: Validar telemetria tempo real
-- [ ] 30/04: Revisar logs/erros
-- [ ] 01/05: Ajustar retenção conforme volume
-- [ ] 02/05: Teste presença online/offline real
-- [ ] 03/04: Validar dedup com dados reais
-- [ ] 04/05: Otimizar índices
-
-**FRONTEND:**
-- [ ] 25/04: Testes finais com mock
-- [ ] 28/04: Ligar dashboard, aguardar dados reais
-- [ ] 29/04: Marcar posição real do drone
-- [ ] 30/04: Validar fluxo criação missão
-- [ ] 01/05: Teste `emergency_stop` (seguro)
-- [ ] 02/05: Revisar indicadores (bateria, obstáculo)
-- [ ] 03/05: Teste responsividade com dados reais
-- [ ] 04/05: Bug fixes
-
-**Deliverable S1:** Hardware funcional + telemetria real
+**Criterio F4:** sistema pronto para ciclo final de validacao em rio.
 
 ---
 
-### Semana 2: 05/05-08/05
+## 14.6 FASE F5: Validacao Final e Entrega (15/05-18/05)
 
-**FIRMWARE:**
-- [ ] 05/05: Waypoints com dados reais
-- [ ] 06/05: Teste navegação piscina (3 waypoints)
-- [ ] 07/05: LOS básico (sem compensação)
-- [ ] 08/05: Path real em `/missions/{id}/path` ✅
+- [ ] Teste de autonomia offline (drone continua sem backend).
+- [ ] Teste de `emergency_stop` e retorno para origem.
+- [ ] Teste de desvio de obstaculo e continuidade da missao.
+- [ ] Coleta de evidencias: videos, logs RTDB, capturas do dashboard.
+- [ ] Consolidacao da documentacao final.
 
-**BACKEND:**
-- [ ] 05/05: Validar volume dados
-- [ ] 06/05: Testes escala
-- [ ] 07/05: Relatório performance
-- [ ] 08/05: Reunião: pronto para integração? ✅
-
-**FRONTEND:**
-- [ ] 05/05: Visualizar `route.points` no mapa
-- [ ] 06/05: Rota em tempo real
-- [ ] 07/05: Painel logs com eventos reais
-- [ ] 08/05: Teste fluxo completo (inicio→fim) ✅
-
-**Critério F2:**
-- ✅ Hardware montado e funcional
-- ✅ Telemetria real fluindo
-- ✅ Frontend mostrando dados reais
-- ✅ Navegação simples funciona
-
----
-
-## 14.4 FASE F3: Integração Ponta-a-Ponta (09/05-22/05)
-
-**FIRMWARE:**
-- [ ] 09/05-15/05: LOS básico (sem beta_hat)
-- [ ] 16/05-22/05: Testes rota: navegação linha reta funciona? ✅
-
-**BACKEND:**
-- [ ] Validar dados LOS (atan2, e_ct, chi_d)
-- [ ] Monitorar dedup real
-
-**FRONTEND:**
-- [ ] Visualizar `active_leg` tempo real
-- [ ] Teste rota completa no mapa
-
-**Critério F3:**
-- ✅ Navegação simples ponta-a-ponta
-- ✅ LOS básico funciona
-- ✅ Rota visível no mapa
-
----
-
-## 14.5 FASE F4: Refinamento Avançado (23/05-05/06)
-
-**FIRMWARE:**
-- [ ] Implementar `beta_hat` (compensação correnteza)
-- [ ] Timeout leg (30s)
-- [ ] Dedup path (hash SHA256)
-- [ ] Testes rio (ou simulação correnteza)
-
-**BACKEND:**
-- [ ] Análise correnteza (COG vs heading)
-- [ ] Otimizações finais
-
-**FRONTEND:**
-- [ ] Visualizar correnteza estimada
-- [ ] Dashboard final
-
-**Critério F4:**
-- ✅ Navegação avançada com compensação
-- ✅ Timeout leg funciona
-- ✅ Dedup validado
-
----
-
-## 14.6 FASE F5: Validação e Testes Finais (06/06-18/06)
-
-**Testes em rio (critérios do MVP):**
-1. Autonomia offline
-2. Emergency stop
-3. Desvio obstáculo
-4. Retorno origem
-5. Security Rules
-6. Waypoints adaptativos
-
-**Evidências:**
-- Videos
-- Logs finais
-- Relatório técnico
-
-**Critério F5:**
-- ✅ MVP 100% validado
-- ✅ Pronto para apresentação
+**Criterio F5:** MVP validado e documentado ate **18/05/2026**.
 
 ## 15. Design e Prototipagem do Frontend React
 
@@ -1223,14 +1044,17 @@ export function useMissionManager(droneId) {
 
 ---
 
-### 15.8 Cronograma de Implementação (Detalhado em F1)
+### 15.8 Cronograma de Implementacao do Frontend (Ajustado para 18/05)
 
-| Semana | Tarefa | Status |
+| Etapa | Janela | Entrega Frontend |
 |---|---|---|
-| S1 | Estrutura React + Firebase Auth + Mapa base | 07/04 ✅ |
-| S2 | Painel telemetria + Logs dinâmicos | 14/04 ✅ |
-| S3 | Modais + Handlers + Polish UX | 21/04 ✅ |
-| F2 | Testes com dados reais + Bug fixes | 08/05 ✅ |
+| F0-UI | 28/03-30/03 | Wireframes v1, layout base e fluxo de telas |
+| S1 | 31/03-06/04 | Estrutura React + Firebase Auth + mapa base |
+| S2 | 07/04-13/04 | Painel de telemetria, logs dinamicos e acoes principais |
+| S3 | 14/04-27/04 | Polimento UX/UI, responsividade e testes E2E com mocks |
+| S4 | 28/04-07/05 | Integracao com dados reais (hardware) + correcoes |
+| S5 | 08/05-14/05 | Acabamento visual final e validacao operacional do dashboard |
+| S6 | 15/05-18/05 | Suporte a validacao em campo, ajustes finais e evidencias |
 
 ---
 
