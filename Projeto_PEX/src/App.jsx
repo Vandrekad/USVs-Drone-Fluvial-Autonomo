@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
- 
+ import nome from "./assets/nome.jpeg";
 // ── Mock data simulation ──────────────────────────────────────────────────────
 const BASE_LAT = -3.0610;
 const BASE_LNG = -60.0200;
@@ -321,16 +321,21 @@ export default function App() {
  
       <div style={{ minHeight: "100vh", padding: "24px 20px" }}>
  
-        {/* Header */}
+         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <div style={{ width: 32, height: 32, background: "#1a1a18", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ color: "#fff", fontSize: 16 }}>⛵</span>
-              </div>
-              <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#1a1a18" }}>
-                USV-AM
-              </h1>
+              <img 
+                src={nome} 
+                alt="Logo" 
+                style={{ 
+                  width: 200, 
+                  height: 60, 
+                  borderRadius: 8, 
+                  objectFit: "cover" 
+                }}
+              />
+              
             </div>
             <p style={{ fontSize: 13, color: "#6b7280", letterSpacing: "0.01em" }}>
               Drone Fluvial Autônomo — Amazonas
