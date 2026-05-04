@@ -1,54 +1,81 @@
-# USV-AM - Manual de Execucao Tecnica (MVP)
+# USV-AM - Autonomous Fluvial Drone System
 
-## 1. Motivacao e Objetivo
-O projeto USV-AM propoe um drone fluvial autonomo de baixo custo para o contexto hidrico do Amazonas, com foco em navegacao autonoma, deteccao de obstaculos e telemetria em tempo real.
+**Status:** Active Development (Phase 1: MVP - Sprint F0:F5 | 28/03/2026 - 18/05/2026)  
+**Version:** 1.0 (Foundation Release)  
+**Repository:** Complete End-to-End Development
 
-Objetivo do MVP: entregar e validar um prototipo funcional de embarcacao tipo catamara, usando hardware aberto e materiais acessiveis, capaz de navegar entre coordenadas GPS, evitar colisao e ser monitorado remotamente.
+---
 
-## 2. Escopo Funcional do MVP
+## 1. Project Overview
 
-### 2.1 Firmware (ESP32)
-- Navegacao autonoma por propulsao diferencial com 2 motores.
-- Navegacao GPS por missao com alvo ativo (`target`) e historico de rota (`path`).
-- Navegacao por multiplos waypoints com controle de perna (`WP_i -> WP_{i+1}`), com geracao local no firmware.
-- Controle de rumo com bussola digital.
-- Percepcao de obstaculos com sensor ultrassonico.
-- Telemetria para nuvem e operacao fail-safe offline com buffer em `LittleFS`.
-- Execucao de missao independente do backend durante navegacao.
-- Compensacao de correnteza por algoritmo LOS usando estimativa por GPS NEO-6M + heading (detalhes na Secao 8).
+USV-AM (Unmanned Surface Vehicle - Amazon) is a comprehensive open-source platform for autonomous navigation and monitoring of Amazonian river systems. The project combines embedded systems, cloud infrastructure, and web-based operations into an integrated system capable of autonomous navigation, obstacle detection, telemetry collection, and real-time remote monitoring.
 
-### 2.2 Backend/Cloud (Firebase RTDB)
-- Armazenar telemetria, comando, missoes e logs.
-- Disponibilizar dados estruturados para monitoramento de rota, sensores e alertas.
-- Receber destino final enviado pela interface e disponibilizar contrato de dados confiavel para o firmware.
-- Aplicar regras de seguranca e indices de performance.
+### 1.1 Project Goals
 
-### 2.3 Frontend (React)
-- Dashboard em React com estado de missao, sensores e atuadores.
-- Mapa com React Leaflet para selecao de destino final da missao.
-- Visualizacao de rota percorrida e logs de eventos.
-- Sem edicao manual de waypoints no MVP.
-- Indicadores de conectividade (`online/offline`) e estado operacional.
+- **Operational Autonomy:** Firmware operates completely independent of backend/cloud infrastructure
+- **Real-time Monitoring:** Frontend provides live tracking, telemetry, and operator control
+- **Reliability & Safety:** Multiple fail-safes, offline buffering, and emergency procedures
+- **Scalability:** Architecture supports multi-drone coordination (future phases)
+- **Open Source:** Community-driven development with transparent specifications
 
-## 3. Arquitetura Tecnica
+### 1.2 Phase 1: MVP (Minimum Viable Product) Scope
 
-| Camada | Stack | Responsabilidade |
-|---|---|---|
-| Firmware | ESP32 + Firebase-ESP-Client + TinyGPS++ + LittleFS | Controle autonomo, leitura de sensores, envio de telemetria |
-| Backend/Cloud | Firebase RTDB + Security Rules | Persistencia, seguranca, presenca, historico |
-| Frontend | React + React Leaflet + Firebase SDK | Operacao remota, dashboard, visualizacao |
+**Delivery Date:** May 18, 2026  
+**Objectives:**
+- Functional catamaran-type watercraft with differential propulsion
+- GPS-based autonomous waypoint navigation
+- Real-time telemetry streaming to cloud
+- Web-based dashboard for operator control
+- Offline fail-safe with automatic buffering and resync
+- Obstacle detection and emergency stop capabilities
 
-### 3.1 Fluxo macro
-1. Frontend cria a missao e envia apenas o destino final no RTDB.
-2. Firmware escuta stream de comando, gera rota local por waypoints e executa navegacao autonoma por perna.
-3. Firmware publica status operativo, telemetria, `path` e logs em tempo real.
-4. Frontend apenas monitora rota, estado e alertas.
-5. Ao concluir a rota, firmware entra em estado ocioso e continua publicando localizacao.
-6. Em perda de conexao, firmware salva buffer em `LittleFS` e faz flush ao reconectar.
+## 2. Functional Scope
 
-## 3.2 Fluxogramas (Mermaid)
+This section summarizes Phase 1 capabilities. **For detailed requirements, see `docs/PRD.md`**.
 
-### 3.2.1 Arquitetura geral
+### 2.1 Firmware Layer (ESP32-based Embedded System)
+
+**Core Capabilities:**
+- ✅ Autonomous navigation via differential propulsion (2 DC motors)
+- ✅ GPS-based mission execution with active target and route history
+- ✅ Multi-waypoint navigation with automatic leg control (WP_i → WP_{i+1})
+- ✅ Digital compass heading control (HMC5883L calibrated)
+- ✅ Obstacle detection with real-time avoidance (HC-SR04 ultrasonic)
+- ✅ Cloud telemetry streaming with fail-safe offline buffering (LittleFS)
+- ✅ Mission autonomy independent of backend connectivity
+- ✅ Current compensation using Line-of-Sight (LOS) algorithm with GPS + compass estimation
+
+**Operating States:**
+- `IDLE_HOLDING_POSITION` - Ready for commands, maintaining location
+- `NAVIGATING_TO_GOAL` - Following waypoint path with LOS control
+- `OBSTACLE_AVOIDANCE` - Local reactive navigation
+- `RETURNING_TO_HOME` - Emergency or mission-end return sequence
+- `OFFLINE_NAVIGATION` - Full autonomy without cloud connection (guaranteed)
+
+### 2.2 Backend/Cloud Layer (Firebase RTDB + Security Rules)
+
+**Core Capabilities:**
+- ✅ Real-time telemetry, command, mission, and log persistence
+- ✅ Structured data schema for reliable firmware-frontend contract
+- ✅ Role-based access control (firmware, operator, admin)
+- ✅ Presence detection and online/offline status management
+- ✅ Atomic status updates with consistency guarantees
+- ✅ Event logging with searchable/filterable archives
+- ✅ Data indices for efficient mission and log queries
+
+### 2.3 Frontend Layer (React + Leaflet Web Dashboard)
+
+**Core Capabilities:**
+- ✅ Real-time operator dashboard (map 70%, telemetry 25%, logs 15%)
+- ✅ Operator authentication via Firebase Auth
+- ✅ Live map visualization with drone marker and heading rotation
+- ✅ Telemetry display: battery, motors, heading, obstacle distance, route progress
+- ✅ Mission control: destination setting, emergency stop with confirmation
+- ✅ Event log viewer with All / Warnings / Errors filtering
+- ✅ Responsive design for desktop, tablet, and mobile operation
+- ✅ Visual connection status indicator
+
+## 3. System Architecture
 ```mermaid
 graph TD
     %% Estilização
@@ -672,47 +699,70 @@ Como o MVP nao possui sensor de correnteza dedicado, usar estimativa por diferen
 
 ---
 
-## 14.5 FASE F4: Refino Final (08/05-14/05)
+### 11.7 Phase F4: Final Refinement (08/05-14/05)
 
-### Firmware
-- [ ] Ajustar compensacao de correnteza (`beta_hat`) para contexto do Amazonas. (**Orlando, Lucinao**)
-- [ ] Ajustar parametros LOS (`Delta`, `Kp`, `R_switch`) e estabilidade. (**Orlando, Lucinao**)
-- [ ] Consolidar deduplicacao e fail-safe. (**Orlando**)
+**Objectives:** Performance tuning, field readiness, operational polish
 
-### Frontend
-- [ ] Acabamento visual e operacional do dashboard. (**Ariadne**)
-- [ ] Painel de logs e alertas final para uso em campo. (**Ariadne, Leonora**)
+**Firmware Tasks (Orlando + Lucinao):**
+- [ ] Adjust current compensation (`beta_hat`) for Amazonas context
+- [ ] Calibrate LOS parameters (Delta, Kp, R_switch) and stability
+- [ ] Consolidate deduplication and fail-safe mechanisms
+- [ ] Full system stress testing
 
-**Criterio F4:** sistema pronto para ciclo final de validacao em rio.
+**Frontend Tasks (Ariadne):**
+- [ ] Visual polish and operational refinement
+- [ ] Final logs panel and alerts for field use
+- [ ] Bright-light readability testing
+- [ ] Last-mile UX improvements
 
----
-
-## 14.6 FASE F5: Validacao Final e Entrega (15/05-18/05)
-
-- [ ] Teste de autonomia offline (drone continua sem backend). (**Orlando, Lucinao**)
-- [ ] Teste de `emergency_stop` e retorno para origem. (**Orlando, Leonora, Lucinao**)
-- [ ] Teste de desvio de obstaculo e continuidade da missao. (**Orlando, Leonora, Lucinao**)
-- [ ] Coleta de evidencias: videos, logs RTDB, capturas do dashboard. (**Leonora, Ariadne**)
-- [ ] Consolidacao da documentacao final. (**Orlando, Ariadne, Leonora, Luciano**)
-
-**Criterio F5:** MVP validado e documentado ate **18/05/2026**.
-
-## 15. Design e Prototipagem do Frontend React
-
-### 15.1 Filosofia de Design
-
-O dashboard segue o paradigma de **carro autônomo em rio**: o operador **observa**, não pilota manualmente. Interface minimalista, com foco em indicadores de estado, visualização de rota e logs de eventos.
-
-**Princípios:**
-- Mapa sempre visível (70% da tela)
-- Telemetria em painel lateral (direita)
-- Logs em abas inferiores
-- Botões de ação grandes e confirmados
-- Responsivo para tablet (operador em rio)
+**Exit Criteria:** System ready for final validation cycle in river
 
 ---
 
-### 15.2 Wireframes / Layout Geral
+### 11.8 Phase F5: Final Validation & Delivery (15/05-18/05)
+
+**Objectives:** Comprehensive field testing and MVP acceptance
+
+**Validation Tests (All):**
+- [ ] Offline autonomy: drone continues without backend
+- [ ] Emergency stop execution and return to origin
+- [ ] Obstacle detection and avoidance continuity
+- [ ] Multi-leg navigation (3+ waypoints minimum)
+- [ ] WiFi reconnection and LittleFS buffer sync
+- [ ] Live dashboard monitoring end-to-end
+
+**Documentation & Evidence (Leonora, Ariadne):**
+- [ ] Video recordings of field missions
+- [ ] RTDB exported logs for audit trail
+- [ ] Dashboard screenshots and metrics
+- [ ] Comprehensive test report with acceptance criteria
+
+**Final Documentation (Orlando, Ariadne):**
+- [ ] Code cleanup and repository organization
+- [ ] README and PRD finalization
+- [ ] Architecture diagrams and technical notes
+- [ ] Deployment and setup guides
+
+**Exit Criteria:** MVP validated, documented, and ready for demonstration by **18/05/2026**
+
+---
+
+## 12. Frontend Design & React Architecture
+
+### 12.1 Design Philosophy
+
+The dashboard follows the **autonomous vehicle in river** paradigm: the operator **observes and commands**, does not manually pilot. Interface is minimalist, focused on state indicators, route visualization, and operational logs.
+
+**Key Principles:**
+- Map always visible (70% of viewport)
+- Telemetry in right sidebar (25%)
+- Logs in tabbed bottom panel (15%)
+- Large, confirmation-based action buttons
+- Responsive for tablet operation in field
+
+---
+
+### 12.2 Dashboard Layout & Wireframe
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -743,7 +793,7 @@ O dashboard segue o paradigma de **carro autônomo em rio**: o operador **observ
 
 ---
 
-### 15.3 Componentes React (Estrutura de Modulos)
+### 12.3 React Component Structure
 
 ```
 /frontend/src/
@@ -778,7 +828,7 @@ O dashboard segue o paradigma de **carro autônomo em rio**: o operador **observ
 
 ---
 
-### 15.4 Detalhamento Visual por Secção
+### 12.4 Visual Details by Section
 
 #### **A) NAVBAR (Barra Superior)**
 
@@ -947,7 +997,7 @@ O dashboard segue o paradigma de **carro autônomo em rio**: o operador **observ
 
 ---
 
-### 15.5 Fluxos de Interação (User Stories)
+### 12.5 User Interaction Flows (User Stories)
 
 #### **Cenário 1: Iniciar Missão**
 1. Operador vê mapa carregado, drone em IDLE
@@ -978,7 +1028,7 @@ O dashboard segue o paradigma de **carro autônomo em rio**: o operador **observ
 
 ---
 
-### 15.6 Detalhamento de Implementação (Código Estrutura)
+### 12.6 Implementation Details (Code Structure)
 
 #### **Hooks Principais**
 
@@ -1047,7 +1097,7 @@ export function useMissionManager(droneId) {
 
 ---
 
-### 15.7 Paleta de Cores e Tipografia
+### 12.7 Color Palette & Typography
 
 **Cores (Tailwind CSS):**
 - Primária: `#3b82f6` (azul)
@@ -1064,7 +1114,7 @@ export function useMissionManager(droneId) {
 
 ---
 
-### 15.8 Cronograma de Implementacao do Frontend (Ajustado para 18/05)
+### 12.8 Frontend Implementation Schedule (Aligned with Phase 1)
 
 | Etapa | Janela | Entrega Frontend |
 |---|---|---|
@@ -1078,25 +1128,38 @@ export function useMissionManager(droneId) {
 
 ---
 
-### 15.9 Checklist de Componentes (MVP)
+### 12.9 MVP Component Checklist
 
-**OBRIGATÓRIO:**
-- [ ] Navbar com status online/offline
-- [ ] Mapa centrado no rio com marcador drone
-- [ ] Polyline de rota em tempo real
-- [ ] Painel telemetria (bateria, modo, perna, obstáculo)
-- [ ] Botão set_destination (cria missão)
-- [ ] Botão emergency_stop (com confirmação)
-- [ ] Painel logs com filtro
-- [ ] Responsividade (desktop + tablet)
+**REQUIRED (Phase 1 MVP):**
+- [ ] Navbar with online/offline status indicator
+- [ ] Leaflet map centered on river with drone marker
+- [ ] Real-time route polyline visualization
+- [ ] Telemetry panel (battery gauge, mode, leg progress, obstacle distance)
+- [ ] Set destination button (creates mission from click or coordinates)
+- [ ] Emergency stop button (with confirmation modal)
+- [ ] Logs panel with All / Warnings / Errors filtering
+- [ ] Responsive layout (desktop and tablet)
 
-**DESEJÁVEL (Se tempo permitir):**
-- [ ] Gráfico de histórico de bateria
-- [ ] Zoom automático em rota
-- [ ] Autocomplete de coordenadas (lugares conhecidos)
-- [ ] Dark mode
+**DESIRABLE (If time permits):**
+- [ ] Battery history chart
+- [ ] Automatic zoom to route bounds
+- [ ] Coordinate autocomplete (known locations)
+- [ ] Dark mode toggle
 
-**NÃO INCLUSO (Backlog):**
-- Editor manual de waypoints
-- Planejamento automático de rota (será no firmware)
-- Simulação 3D
+**NOT INCLUDED (Future phases):**
+- Manual waypoint editor
+- Automatic route planning (firmware generates)
+- 3D simulation
+- Multi-drone fleet view
+
+---
+
+## 13. Related Documentation
+
+**For complete technical specifications, see:**
+- **`docs/PRD.md`** - Product Requirements Document with detailed specs
+- **`backend/RTDB_SCHEMA.md`** - Firebase RTDB schema reference
+- **`firmware/README.md`** - Firmware setup and build instructions (TBD)
+- **`Projeto_PEX/README.md`** - Frontend setup and development guide
+
+
