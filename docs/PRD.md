@@ -159,7 +159,7 @@ Dashboard
     "heading": 145.2
   },
   "sensors": {
-    "battery_mv": 7400,
+    "battery_mv": 3700,
     "obs_dist": 120
   },
   "actuators": {

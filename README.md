@@ -430,7 +430,7 @@ Path: `/drones/{drone_id}/telemetry`
 ```json
 {
   "position": { "lat": -3.1019, "lon": -60.0250, "heading": 145.2 },
-  "sensors": { "battery_mv": 7400, "obs_dist": 120 },
+  "sensors": { "battery_mv": 3700, "obs_dist": 120 },
   "actuators": { "thrust_l": 80, "thrust_r": 45 },
   "mission_id": "m_1710624000",
   "timestamp": 1710624000
