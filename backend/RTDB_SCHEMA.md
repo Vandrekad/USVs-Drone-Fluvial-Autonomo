@@ -95,3 +95,14 @@ Exemplo:
 
 ```
 
+## Politica de Retencao de Logs (MVP)
+
+- Retencao padrao: 90 dias.
+- Fonte de verdade para expiracao: campo `timestamp` (epoch em segundos).
+- Campo opcional para prazo customizado: `expires_at` (epoch em segundos).
+- Limpeza automatica: `backend/scripts/cleanup-logs.mjs`.
+
+Recomendacao operacional:
+- Executar limpeza 1x ao dia em janela de baixo uso.
+- Definir `LOG_RETENTION_DAYS` para alterar o prazo sem mudar codigo.
+

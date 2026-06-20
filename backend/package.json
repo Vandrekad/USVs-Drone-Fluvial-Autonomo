@@ -1,0 +1,12 @@
+{
+  "name": "usv-am-backend-tools",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "cleanup:logs": "node scripts/cleanup-logs.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0"
+  }
+}
