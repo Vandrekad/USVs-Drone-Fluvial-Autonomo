@@ -1,0 +1,41 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "drones": {
+      "$drone_id": {
+        ".read": "auth != null && (auth.token.role === 'operator' || auth.token.role === 'admin' || auth.token.role === 'firmware' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+        "telemetry": {
+          ".write": "auth != null && (auth.token.role === 'firmware' || auth.token.role === 'admin' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+          ".validate": "newData.hasChildren(['position', 'sensors', 'actuators', 'mission_id', 'timestamp'])"
+        },
+        "status": {
+          ".write": "auth != null && (auth.token.role === 'firmware' || auth.token.role === 'admin' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+          ".validate": "newData.hasChildren(['online', 'last_seen', 'active_mission_id', 'nav_state', 'active_leg', 'route_progress', 'last_position'])"
+        },
+        "command": {
+          ".read": "auth != null && (auth.token.role === 'operator' || auth.token.role === 'admin' || auth.token.role === 'firmware' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+          ".write": "auth != null && (auth.token.role === 'operator' || auth.token.role === 'admin' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+          ".validate": "newData.hasChildren(['command_id', 'cmd_type', 'mission_id', 'issued_at'])"
+        }
+      }
+    },
+    "missions": {
+      "$mission_id": {
+        ".read": "auth != null && (auth.token.role === 'operator' || auth.token.role === 'admin' || auth.token.role === 'firmware' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+        ".write": "auth != null && (auth.token.role === 'operator' || auth.token.role === 'admin' || auth.token.role === 'firmware' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+        ".validate": "newData.hasChildren(['drone_id', 'start_time', 'status', 'origin', 'target', 'route'])",
+        "path": {
+          ".write": "auth != null && (auth.token.role === 'firmware' || auth.token.role === 'admin' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')"
+        }
+      }
+    },
+    "logs": {
+      "$log_id": {
+        ".read": "auth != null && (auth.token.role === 'operator' || auth.token.role === 'admin' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+        ".write": "auth != null && (auth.token.role === 'firmware' || auth.token.role === 'admin' || auth.uid === 'do01A3JzdRb5z4ulrCoVcy1mA8A2')",
+        ".validate": "newData.hasChildren(['drone_id', 'mission_id', 'type', 'timestamp'])"
+      }
+    }
+  }
+}
