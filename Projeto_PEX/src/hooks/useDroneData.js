@@ -3,11 +3,13 @@ import { useFirebaseDrone } from "./useFirebaseDrone";
 import { useMockDrone } from "./useMockDrone";
 import { getFirebaseHandles } from "../lib/firebase";
 
-export function useDroneData() {
+export function useDroneData(opts = {}) {
   const handles = getFirebaseHandles();
   const useFirebaseMode = Boolean(handles);
-  const firebase = useFirebaseDrone({ enabled: useFirebaseMode });
-  const mock = useMockDrone({ enabled: !useFirebaseMode });
+
+  const enabled = Boolean(opts.enabled ?? true);
+  const firebase = useFirebaseDrone({ enabled: enabled && useFirebaseMode });
+  const mock = useMockDrone({ enabled: enabled && !useFirebaseMode });
 
   useEffect(() => {
     const source = useFirebaseMode ? "firebase" : "mock";

@@ -10,17 +10,9 @@ import { LoginPanel } from "./components/LoginPanel";
 
 export default function App() {
   const { user, loading, refresh } = useAuthState();
-
-  if (loading) {
-    return <div style={{padding: 24}}>Carregando...</div>;
-  }
-
-  if (!user) {
-    return <LoginPanel onLoginSuccess={() => refresh()} />;
-  }
-
-  const { telemetry, status, mission, logs, path, setDestination, emergencyStop } = useDroneData();
-
+  // Keep hooks order stable: initialize drone data hook even before login,
+  // but disable its active subscriptions until user is authenticated.
+  const drone = useDroneData({ enabled: !!user });
   const [showDestModal, setShowDestModal] = useState(false);
   const [showStopModal, setShowStopModal] = useState(false);
   const [mapClickCoord, setMapClickCoord] = useState(null);
@@ -40,6 +32,16 @@ export default function App() {
     onResize();
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  if (loading) {
+    return <div style={{padding: 24}}>Carregando...</div>;
+  }
+
+  if (!user) {
+    return <LoginPanel onLoginSuccess={() => refresh()} />;
+  }
+
+  const { telemetry, status, mission, logs, path, setDestination, emergencyStop } = drone;
 
   const handleMapClick = (lat, lon) => {
     setMapClickCoord({ lat, lon });
