@@ -4,10 +4,10 @@ import { MapPanel } from "./components/MapPanel";
 import { Navbar } from "./components/Navbar";
 import { EmergencyModal, SetDestinationModal } from "./components/Modals";
 import { TelemetryPanel } from "./components/TelemetryPanel";
-import { useMockDrone } from "./hooks/useMockDrone";
+import { useDroneData } from "./hooks/useDroneData";
 
 export default function App() {
-  const { telemetry, status, mission, logs, path, setDestination, emergencyStop } = useMockDrone();
+  const { telemetry, status, mission, logs, path, setDestination, emergencyStop } = useDroneData();
 
   const [showDestModal, setShowDestModal] = useState(false);
   const [showStopModal, setShowStopModal] = useState(false);
@@ -35,14 +35,14 @@ export default function App() {
   };
 
   const handleConfirmDestination = (lat, lon) => {
-    setDestination(lat, lon);
+    void setDestination(lat, lon);
     setShowDestModal(false);
     setMapClickCoord(null);
   };
 
   const handleEmergency = () => setShowStopModal(true);
   const handleConfirmStop = () => {
-    emergencyStop();
+    void emergencyStop();
     setShowStopModal(false);
   };
 
@@ -122,8 +122,7 @@ export default function App() {
           alignItems: isMobile ? "flex-start" : "center",
         }}
       >
-        <span>USV-AM MVP • mock data local</span>
-        <span>Frontend modularizado para manter o fluxo do README sem integrar Firebase ainda</span>
+        <span>USV-AM MVP</span>
       </div>
 
       {showDestModal && (

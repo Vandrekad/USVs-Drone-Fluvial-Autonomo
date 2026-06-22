@@ -3,7 +3,8 @@ import { BASE_LAT, BASE_LNG, DRONE_ID, MOCK_ROUTE_PTS } from "../lib/dashboard";
 
 const INITIAL_TS = Math.floor(Date.now() / 1000);
 
-export function useMockDrone() {
+export function useMockDrone(options = {}) {
+  const enabled = options.enabled ?? true;
   const [telemetry, setTelemetry] = useState({
     position: { lat: BASE_LAT, lon: BASE_LNG, heading: 145 },
     sensors: { battery_mv: 7600, obs_dist: 999 },
@@ -46,6 +47,10 @@ export function useMockDrone() {
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
     const tick = setInterval(() => {
       setTelemetry((prev) => {
         const pts = activeMission.current?.route?.points || MOCK_ROUTE_PTS;
@@ -97,7 +102,7 @@ export function useMockDrone() {
     }, 900);
 
     return () => clearInterval(tick);
-  }, [addLog]);
+  }, [addLog, enabled]);
 
   const setDestination = useCallback(
     (lat, lon) => {

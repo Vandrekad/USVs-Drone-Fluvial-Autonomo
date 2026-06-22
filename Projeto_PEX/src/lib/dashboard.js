@@ -12,10 +12,24 @@ export const NAV_STATE = {
 
 export const LOG_TYPES = {
   NAV: { color: "#3b82f6", bg: "#eff6ff", icon: "→", label: "NAV" },
-  OBS: { color: "#f59e0b", bg: "#fffbeb", icon: "⚠", label: "OBS" },
-  CONN: { color: "#10b981", bg: "#f0fdf4", icon: "✓", label: "CONN" },
-  EMERGENCY: { color: "#ef4444", bg: "#fff5f5", icon: "!", label: "EMERG" },
   MISSION: { color: "#8b5cf6", bg: "#f5f3ff", icon: "◉", label: "MISSÃO" },
+  CONN: { color: "#10b981", bg: "#f0fdf4", icon: "✓", label: "CONN" },
+  OBS: { color: "#f59e0b", bg: "#fffbeb", icon: "⚠", label: "OBS" },
+  EMERGENCY: { color: "#ef4444", bg: "#fff5f5", icon: "!", label: "EMERG" },
+  mission_started: { color: "#8b5cf6", bg: "#f5f3ff", icon: "◉", label: "MISSÃO" },
+  navigating_to_goal: { color: "#3b82f6", bg: "#eff6ff", icon: "→", label: "NAV" },
+  leg_complete: { color: "#10b981", bg: "#f0fdf4", icon: "✓", label: "PERNA" },
+  obstacle_detected: { color: "#f59e0b", bg: "#fffbeb", icon: "⚠", label: "OBS" },
+  connection_lost: { color: "#ef4444", bg: "#fff5f5", icon: "!", label: "CONN" },
+  connection_restored: { color: "#10b981", bg: "#f0fdf4", icon: "✓", label: "CONN" },
+  emergency_stop: { color: "#ef4444", bg: "#fff5f5", icon: "!", label: "EMERG" },
+  returning_to_home: { color: "#eab308", bg: "#fefce8", icon: "↩", label: "HOME" },
+  mission_complete: { color: "#10b981", bg: "#f0fdf4", icon: "✓", label: "MISSÃO" },
+  offline_buffer_flush: { color: "#0ea5e9", bg: "#ecfeff", icon: "⇄", label: "SYNC" },
+  error: { color: "#ef4444", bg: "#fff5f5", icon: "!", label: "ERRO" },
+  connection: { color: "#10b981", bg: "#f0fdf4", icon: "✓", label: "CONN" },
+  warning: { color: "#f59e0b", bg: "#fffbeb", icon: "⚠", label: "AVISO" },
+  info: { color: "#3b82f6", bg: "#eff6ff", icon: "i", label: "INFO" },
 };
 
 export const MOCK_ROUTE_PTS = [

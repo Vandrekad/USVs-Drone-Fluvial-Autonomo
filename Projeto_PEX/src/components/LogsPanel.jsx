@@ -4,12 +4,15 @@ import { LOG_TYPES, S, timeStr } from "../lib/dashboard";
 export function LogsPanel({ logs }) {
   const [filter, setFilter] = useState("ALL");
 
-  const warnings = logs.filter((log) => log.type === "OBS").length;
-  const errors = logs.filter((log) => log.type === "EMERGENCY").length;
+  const isWarning = (type) => ["obstacle_detected", "connection_lost", "warning", "OBS"].includes(type);
+  const isError = (type) => ["emergency_stop", "error", "EMERGENCY"].includes(type);
+
+  const warnings = logs.filter((log) => isWarning(log.type)).length;
+  const errors = logs.filter((log) => isError(log.type)).length;
 
   const filtered = logs.filter((log) => {
-    if (filter === "WARNINGS") return log.type === "OBS";
-    if (filter === "ERRORS") return log.type === "EMERGENCY";
+    if (filter === "WARNINGS") return isWarning(log.type);
+    if (filter === "ERRORS") return isError(log.type);
     return true;
   });
 
@@ -48,7 +51,7 @@ export function LogsPanel({ logs }) {
           <div style={{ padding: "16px 14px", textAlign: "center", fontSize: 12, color: "#9ca3af" }}>Sem eventos</div>
         ) : (
           filtered.map((log) => {
-            const t = LOG_TYPES[log.type] || LOG_TYPES.NAV;
+            const t = LOG_TYPES[log.type] || LOG_TYPES[log.category] || LOG_TYPES.NAV;
             return (
               <div key={log.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 14px", animation: "fadeIn 0.25s ease" }}>
                 <span style={{ fontSize: 10, ...S.mono, color: "#9ca3af", whiteSpace: "nowrap", paddingTop: 1 }}>{timeStr(log.timestamp)}</span>
