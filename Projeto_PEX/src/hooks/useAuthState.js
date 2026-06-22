@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { signOut } from "firebase/auth";
 import { getFirebaseHandles } from "../lib/firebase";
 
 export function useAuthState() {
@@ -22,7 +23,7 @@ export function useAuthState() {
     const handles = getFirebaseHandles();
     if (handles?.auth) {
       try {
-        await handles.auth.signOut();
+        await signOut(handles.auth);
       } catch (err) {
         setError(err.message);
       }
@@ -31,5 +32,19 @@ export function useAuthState() {
     setUser(null);
   };
 
-  return { user, loading, error, logout };
+  function refresh() {
+    const stored = localStorage.getItem("usv_am_user");
+    if (stored) {
+      try {
+        setUser(JSON.parse(stored));
+      } catch (err) {
+        localStorage.removeItem("usv_am_user");
+        setUser(null);
+      }
+    } else {
+      setUser(null);
+    }
+  }
+
+  return { user, loading, error, logout, refresh };
 }

@@ -5,8 +5,20 @@ import { Navbar } from "./components/Navbar";
 import { EmergencyModal, SetDestinationModal } from "./components/Modals";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import { useDroneData } from "./hooks/useDroneData";
+import { useAuthState } from "./hooks/useAuthState";
+import { LoginPanel } from "./components/LoginPanel";
 
 export default function App() {
+  const { user, loading, refresh } = useAuthState();
+
+  if (loading) {
+    return <div style={{padding: 24}}>Carregando...</div>;
+  }
+
+  if (!user) {
+    return <LoginPanel onLoginSuccess={() => refresh()} />;
+  }
+
   const { telemetry, status, mission, logs, path, setDestination, emergencyStop } = useDroneData();
 
   const [showDestModal, setShowDestModal] = useState(false);
