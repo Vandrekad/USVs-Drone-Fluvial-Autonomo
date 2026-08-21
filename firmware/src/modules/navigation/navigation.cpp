@@ -3,13 +3,9 @@
 #include "modules/utils/utils.h"
 #include "modules/net/firebase_manager.h"
 #include "modules/state/state.h"
+#include "modules/sensors/sensors.h"
+#include "config.h"
 
-static const double lookaheadDistanceMeters = 8.0;
-static const double losHeadingGain = 1.5;
-static const int defaultBaseThrust = 120;
-static const int obstacleThresholdCm = 60;
-static const int obstacleClearThresholdCm = 120;
-static const unsigned long obstacleAvoidanceTimeoutMs = 8000;
 static unsigned long obstacleAvoidanceStartMs = 0;
 static NavState previousNavState = IDLE_HOLDING_POSITION;
 
@@ -33,12 +29,16 @@ const char* navStateToString(NavState state) {
 double computeDistanceMeters(double lat1, double lon1, double lat2, double lon2) {
   double dLat = deg2rad(lat2 - lat1);
   double dLon = deg2rad(lon2 - lon1);
-  double a = sin(dLat / 2) * sin(dLat / 2) + cos(deg2rad(lat1)) * cos(deg2rad(lat2)) * sin(dLon / 2) * sin(dLon / 2);
-  double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+  double a = sin(dLat / 2) * sin(dLat / 2) +
+             cos(deg2rad(lat1)) * cos(deg2rad(lat2)) *
+             sin(dLon / 2) * sin(dLon / 2);
+  double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
   return 6371000.0 * c;
 }
 
-static double computeCrossTrackError(double fromLat, double fromLon, double toLat, double toLon, double pointLat, double pointLon) {
+static double computeCrossTrackError(double fromLat, double fromLon,
+                                      double toLat, double toLon,
+                                      double pointLat, double pointLon) {
   double dxLeg = (toLon - fromLon) * cos(deg2rad(fromLat)) * 111320.0;
   double dyLeg = (toLat - fromLat) * 110540.0;
   double dxPoint = (pointLon - fromLon) * cos(deg2rad(fromLat)) * 111320.0;
@@ -71,9 +71,10 @@ double computeLOSHeading(double fromLat, double fromLon, double toLat, double to
   }
 
   double eCt = computeCrossTrackError(fromLat, fromLon, toLat, toLon, currentLat, currentLon);
-  double chiD = chiP - atan2(eCt, lookaheadDistanceMeters) * 180.0 / PI;
+  double chiD = chiP - atan2(eCt, LOS_LOOKAHEAD_METERS) * 180.0 / PI;
   chiD = fmod(chiD + 360.0, 360.0);
 
+  // Compensação de correnteza via diferença GPS COG vs bússola
   if (hasGpsFix && compassReady) {
     double betaHat = wrapAngleDeg(gpsCourse - currentHeading);
     chiD = wrapAngleDeg(chiD - betaHat);
@@ -87,30 +88,46 @@ double computeLOSHeading(double fromLat, double fromLon, double toLat, double to
 
 void updateLOSControl() {
   if (currentState == NAVIGATING_TO_GOAL || currentState == RETURNING_TO_HOME) {
-    if (obsDist <= obstacleThresholdCm) {
+    // Verificar obstáculo
+    if (obsDist <= OBSTACLE_THRESHOLD_CM) {
       enterObstacleAvoidance();
       return;
     }
 
-    double fromLat = currentLat;
-    double fromLon = currentLon;
     double targetLat = (currentState == NAVIGATING_TO_GOAL) ? goalLat : homeLat;
     double targetLon = (currentState == NAVIGATING_TO_GOAL) ? goalLon : homeLon;
-    double desiredHeading = computeLOSHeading(fromLat, fromLon, targetLat, targetLon);
+
+    // Usar posição atual como ponto de partida para LOS
+    // (idealmente seria WP_i da perna atual, mas no MVP com rota ponto-a-ponto é equivalente)
+    double desiredHeading = computeLOSHeading(currentLat, currentLon, targetLat, targetLon);
     double error = headingErrorDeg(desiredHeading, currentHeading);
-    int correction = int(error * losHeadingGain);
-    thrustL = constrain(defaultBaseThrust + correction, 0, 255);
-    thrustR = constrain(defaultBaseThrust - correction, 0, 255);
-    if (abs(error) < 5.0) {
-      thrustL = defaultBaseThrust;
-      thrustR = defaultBaseThrust;
+    int correction = (int)(error * LOS_HEADING_GAIN);
+
+    thrustL = constrain(NAV_BASE_THRUST + correction, 0, 255);
+    thrustR = constrain(NAV_BASE_THRUST - correction, 0, 255);
+
+    // Banda morta: se erro angular é mínimo, navegação reta
+    if (fabs(error) < 5.0) {
+      thrustL = NAV_BASE_THRUST;
+      thrustR = NAV_BASE_THRUST;
     }
+
   } else if (currentState == OBSTACLE_AVOIDANCE) {
+    // Desvio simples: virar para um lado
     thrustL = 180;
     thrustR = 60;
-    if ((obsDist > obstacleClearThresholdCm && millis() - obstacleAvoidanceStartMs > 2000) || millis() - obstacleAvoidanceStartMs > obstacleAvoidanceTimeoutMs) {
+
+    unsigned long elapsed = millis() - obstacleAvoidanceStartMs;
+    if ((obsDist > OBSTACLE_CLEAR_CM && elapsed > 2000) ||
+        elapsed > OBSTACLE_AVOIDANCE_TIMEOUT_MS) {
       currentState = previousNavState;
+      Serial.println("Saindo de OBSTACLE_AVOIDANCE.");
     }
+
+  } else {
+    // BUG FIX #4: Em IDLE ou qualquer outro estado, PARAR os motores
+    thrustL = 0;
+    thrustR = 0;
   }
 }
 

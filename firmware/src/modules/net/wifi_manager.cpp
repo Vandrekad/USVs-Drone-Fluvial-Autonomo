@@ -1,8 +1,6 @@
 #include "modules/net/wifi_manager.h"
+#include "config.h"
 #include "modules/net/firebase_manager.h"
-
-#define WIFI_SSID "Limas_2.4Ghz"
-#define WIFI_PASSWORD "Souz@2025"
 
 static unsigned long lastWiFiAttemptMs = 0;
 static unsigned long wifiDelayMs = 1000;
@@ -24,7 +22,12 @@ void manageWiFi() {
     if (millis() - lastWiFiAttemptMs >= wifiDelayMs || lastWiFiAttemptMs == 0) {
       lastWiFiAttemptMs = millis();
       Serial.printf("Tentando conectar Wi-Fi (delay atual: %lums)...\n", wifiDelayMs);
-      WiFi.disconnect(true);
+      // Não chamar WiFi.disconnect(true) em cada tentativa — reseta estado desnecessariamente
+      // Apenas reconectar se não estiver tentando
+      if (WiFi.status() != WL_CONNECTED && WiFi.status() != WL_IDLE_STATUS) {
+        WiFi.disconnect(false);
+        delay(10);
+      }
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       wifiDelayMs = min(wifiDelayMs * 2, (unsigned long)8000);
     }
@@ -40,6 +43,7 @@ void manageWiFi() {
 
 void setupWiFi() {
   Serial.println("Iniciando conexão Wi-Fi...");
+  WiFi.mode(WIFI_STA);  // Explicitamente modo Station
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lastWiFiAttemptMs = millis();
 }

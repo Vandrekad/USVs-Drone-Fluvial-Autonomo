@@ -1,5 +1,6 @@
 #include "modules/storage/storage.h"
 #include <LittleFS.h>
+#include "config.h"
 #include "modules/utils/utils.h"
 #include "modules/state/state.h"
 #include "modules/net/firebase_manager.h"
@@ -9,13 +10,14 @@ bool initFileSystem() {
     Serial.println("Falha ao iniciar LittleFS.");
     return false;
   }
+  Serial.println("LittleFS montado.");
   return true;
 }
 
 bool appendLineToFile(const char *path, const String &line) {
   File file = LittleFS.open(path, FILE_APPEND);
   if (!file) {
-    Serial.printf("Erro abrindo %s para escrita. exists=%d\n", path, LittleFS.exists(path));
+    Serial.printf("Erro abrindo %s para append.\n", path);
     return false;
   }
   file.println(line);
@@ -26,7 +28,6 @@ bool appendLineToFile(const char *path, const String &line) {
 bool readFileLines(const char *path, std::vector<String> &lines) {
   File file = LittleFS.open(path, FILE_READ);
   if (!file) {
-    Serial.printf("Erro abrindo %s para leitura. exists=%d\n", path, LittleFS.exists(path));
     return false;
   }
   while (file.available()) {
@@ -43,7 +44,7 @@ bool readFileLines(const char *path, std::vector<String> &lines) {
 bool writeFileLines(const char *path, const std::vector<String> &lines) {
   File file = LittleFS.open(path, FILE_WRITE);
   if (!file) {
-    Serial.printf("Erro abrindo %s para escrita. exists=%d\n", path, LittleFS.exists(path));
+    Serial.printf("Erro abrindo %s para escrita.\n", path);
     return false;
   }
   for (const String &line : lines) {
@@ -59,7 +60,8 @@ bool bufferTelemetryOffline(FirebaseJson &telemetryJson) {
 }
 
 bool bufferPathPointOffline(double lat, double lon, unsigned long ts) {
-  DynamicJsonDocument pointDoc(128);
+  // ArduinoJson v7: usar JsonDocument em vez de DynamicJsonDocument
+  JsonDocument pointDoc;
   pointDoc["lat"] = lat;
   pointDoc["lon"] = lon;
   pointDoc["ts"] = ts;
@@ -72,6 +74,7 @@ bool flushTelemetryBuffer() {
   if (!LittleFS.exists(telemetryBufferPath)) {
     return true;
   }
+
   std::vector<String> lines;
   if (!readFileLines(telemetryBufferPath, lines)) {
     return false;
@@ -81,35 +84,50 @@ bool flushTelemetryBuffer() {
     return true;
   }
 
+  // FIX #14: Processar em lotes para não sobrecarregar RAM
   std::vector<String> remaining;
+  size_t batchLimit = min((size_t)FLUSH_BATCH_SIZE, lines.size());
+
   for (size_t i = 0; i < lines.size(); i++) {
-    DynamicJsonDocument tempDoc(512);
+    if (i >= batchLimit) {
+      // Limitar a um lote por ciclo — o resto fica para a próxima chamada
+      for (size_t j = i; j < lines.size(); j++) {
+        remaining.push_back(lines[j]);
+      }
+      break;
+    }
+
+    JsonDocument tempDoc;
     auto error = deserializeJson(tempDoc, lines[i]);
     if (error) {
-      remaining.push_back(lines[i]);
+      // Linha corrompida — descartar
+      Serial.printf("Descartando linha corrompida no buffer de telemetria (pos %d)\n", (int)i);
       continue;
     }
     FirebaseJson json;
     json.setJsonData(lines[i]);
     if (!sendTelemetryJSON(json)) {
+      // Falha de envio — manter esta e todas as seguintes
       for (size_t j = i; j < lines.size(); j++) {
         remaining.push_back(lines[j]);
       }
       break;
     }
   }
+
   if (remaining.empty()) {
     LittleFS.remove(telemetryBufferPath);
   } else {
     writeFileLines(telemetryBufferPath, remaining);
   }
-  return true;
+  return remaining.empty();  // true se esvaziou completamente
 }
 
 bool flushPathBuffer() {
   if (!LittleFS.exists(pathBufferPath) || activeMissionId.length() == 0) {
     return true;
   }
+
   std::vector<String> lines;
   if (!readFileLines(pathBufferPath, lines)) {
     return false;
@@ -119,6 +137,7 @@ bool flushPathBuffer() {
     return true;
   }
 
+  // Deduplicação por hash dos primeiros 5 pontos
   String remoteHash;
   bool hasRemoteHash = computeRTDBPathHash(activeMissionId, remoteHash, fbdo);
   String localHash = computeLocalPathHash(lines);
@@ -127,12 +146,22 @@ bool flushPathBuffer() {
     startIndex = 5;
   }
 
+  // FIX: processar em lotes
   std::vector<String> remaining;
+  size_t batchEnd = min(startIndex + FLUSH_BATCH_SIZE, lines.size());
+
   for (size_t i = startIndex; i < lines.size(); i++) {
-    DynamicJsonDocument pointDoc(128);
+    if (i >= batchEnd) {
+      for (size_t j = i; j < lines.size(); j++) {
+        remaining.push_back(lines[j]);
+      }
+      break;
+    }
+
+    JsonDocument pointDoc;
     auto error = deserializeJson(pointDoc, lines[i]);
     if (error) {
-      remaining.push_back(lines[i]);
+      // Linha corrompida — descartar
       continue;
     }
     unsigned long ts = pointDoc["ts"] | 0;
@@ -152,7 +181,7 @@ bool flushPathBuffer() {
   } else {
     writeFileLines(pathBufferPath, remaining);
   }
-  return true;
+  return remaining.empty();
 }
 
 bool flushOfflineBuffers() {

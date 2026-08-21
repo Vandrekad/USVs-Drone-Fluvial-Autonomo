@@ -1,11 +1,13 @@
 #include "modules/tests/tests.h"
 #include <LittleFS.h>
+#include "config.h"
 #include "modules/net/wifi_manager.h"
 #include "modules/net/firebase_manager.h"
 #include "modules/storage/storage.h"
 #include "modules/sensors/sensors.h"
 #include "modules/navigation/navigation.h"
 #include "modules/utils/utils.h"
+#include "modules/state/state.h"
 
 static void printComponentTestResult(const char* component, bool result) {
   Serial.print("[TESTE] ");
@@ -62,12 +64,10 @@ bool testFirebaseConnection() {
 bool testLittleFS() {
   Serial.println("Testando armazenamento LittleFS...");
   const char* testPath = "/test_lfs.txt";
-  Serial.printf("LittleFS test path: %s\n", testPath);
-  Serial.printf("LittleFS path exists: %d\n", LittleFS.exists(testPath));
 
   File file = LittleFS.open(testPath, FILE_WRITE);
   if (!file) {
-    Serial.println("Falha ao abrir arquivo de teste no LittleFS (WRITE). Verifique permissão e montagem do sistema de arquivos.");
+    Serial.println("Falha ao abrir arquivo de teste no LittleFS (WRITE).");
     return false;
   }
   file.println("firmware-test");
@@ -75,7 +75,7 @@ bool testLittleFS() {
 
   file = LittleFS.open(testPath, FILE_READ);
   if (!file) {
-    Serial.println("Falha ao ler arquivo de teste no LittleFS (READ). Verifique se o arquivo foi criado corretamente.");
+    Serial.println("Falha ao ler arquivo de teste no LittleFS (READ).");
     return false;
   }
   String content = file.readStringUntil('\n');
@@ -83,62 +83,51 @@ bool testLittleFS() {
 
   String trimmed = content;
   trimmed.trim();
-  Serial.printf("LittleFS read content raw='%s' len=%d trimmed='%s' len=%d\n", content.c_str(), content.length(), trimmed.c_str(), trimmed.length());
 
   LittleFS.remove(testPath);
 
   bool ok = trimmed == "firmware-test";
   if (!ok) {
-    Serial.print("Conteúdo inesperado LittleFS: ");
-    Serial.println(trimmed);
+    Serial.print("Conteúdo inesperado LittleFS: '");
+    Serial.print(trimmed);
+    Serial.println("'");
   }
   return ok;
 }
 
 bool testGPSParsing() {
   Serial.println("Testando parser GPS com NMEA de exemplo...");
-  const String sampleRMC = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
-  int backupHasGps = hasGpsFix;
+  // Backup state
+  bool backupHasGps = hasGpsFix;
   double backupLat = gpsLat;
   double backupLon = gpsLon;
   double backupCourse = gpsCourse;
 
-  String line = sampleRMC;
-  if (line.startsWith("$GPRMC") || line.startsWith("$GNRMC")) {
-    int index = 0;
-    int fieldStart = 0;
-    String fields[12];
-    for (int i = 0; i < line.length() && index < 12; i++) {
-      if (line[i] == ',') {
-        fields[index++] = line.substring(fieldStart, i);
-        fieldStart = i + 1;
-      }
-    }
-    if (index >= 11) {
-      fields[index++] = line.substring(fieldStart);
-    }
-
-    if (index >= 9 && fields[2].length() && fields[4].length()) {
-      char status = fields[2].charAt(0);
-      if (status == 'A') {
-        gpsLat = nmeaToDecimal(fields[3], fields[4].charAt(0));
-        gpsLon = nmeaToDecimal(fields[5], fields[6].charAt(0));
-        gpsCourse = fields[8].toDouble();
-        hasGpsFix = true;
-      } else {
-        hasGpsFix = false;
-      }
+  // Simular parsing manual (readGPS() lê de Serial2)
+  String line = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+  int index = 0;
+  int fieldStart = 0;
+  String fields[13];
+  for (int i = 0; i < (int)line.length() && index < 13; i++) {
+    if (line[i] == ',') {
+      fields[index++] = line.substring(fieldStart, i);
+      fieldStart = i + 1;
     }
   }
+  if (index < 13) fields[index++] = line.substring(fieldStart);
 
-  bool ok = hasGpsFix && fabs(gpsLat - 48.1173) < 0.01 && fabs(gpsLon - 11.5167) < 0.01;
-  Serial.print("GPS parsed: lat=");
-  Serial.print(gpsLat, 6);
-  Serial.print(" lon=");
-  Serial.print(gpsLon, 6);
-  Serial.print(" course=");
-  Serial.println(gpsCourse, 2);
+  bool ok = false;
+  if (index >= 9 && fields[2] == "A") {
+    gpsLat = nmeaToDecimal(fields[3], fields[4].charAt(0));
+    gpsLon = nmeaToDecimal(fields[5], fields[6].charAt(0));
+    gpsCourse = fields[8].toDouble();
+    hasGpsFix = true;
 
+    ok = hasGpsFix && fabs(gpsLat - 48.1173) < 0.01 && fabs(gpsLon - 11.5167) < 0.01;
+    Serial.printf("GPS parsed: lat=%.6f lon=%.6f course=%.2f\n", gpsLat, gpsLon, gpsCourse);
+  }
+
+  // Restore
   gpsLat = backupLat;
   gpsLon = backupLon;
   gpsCourse = backupCourse;
@@ -149,29 +138,25 @@ bool testGPSParsing() {
 bool testCompassSensor() {
   Serial.println("Testando leitura da bússola HMC5883L...");
   if (!compassReady) {
-    Serial.println("Bússola não está pronta. Verifique a alimentação, cabos I2C e a inicialização do sensor.");
+    Serial.println("Bússola não está pronta.");
     return false;
   }
   for (int i = 0; i < 3; i++) {
     if (readCompass()) {
-      Serial.print("Heading lido: ");
-      Serial.println(currentHeading, 2);
+      Serial.printf("Heading lido: %.2f\n", currentHeading);
       return true;
     }
-    Serial.printf("Tentativa %d de leitura da bússola falhou. Retentando...\n", i + 1);
     delay(200);
   }
-  Serial.println("Falha ao ler bússola HMC5883L após 3 tentativas. Verifique conexão I2C e endereço do sensor.");
+  Serial.println("Falha ao ler bússola após 3 tentativas.");
   return false;
 }
 
 bool testUltrasonicSensor() {
-  Serial.println("Testando sensor ultrassônico... (pode demorar alguns ciclos)");
+  Serial.println("Testando sensor ultrassônico...");
   readUltrasonic();
-  Serial.print("Distância medida: ");
-  Serial.print(obsDist);
-  Serial.println(" cm");
-  return obsDist > 0 && obsDist <= 400;
+  Serial.printf("Distância medida: %d cm\n", obsDist);
+  return obsDist > 0 && obsDist <= ULTRASONIC_MAX_CM;
 }
 
 bool testMotorOutput() {
@@ -180,9 +165,7 @@ bool testMotorOutput() {
   thrustR = 100;
   updateMotorOutputs();
   delay(200);
-  thrustL = 0;
-  thrustR = 0;
-  updateMotorOutputs();
+  stopMotors();
   Serial.println("Saída PWM aplicada e desligada.");
   return true;
 }
@@ -194,9 +177,7 @@ bool testRouteGeneration() {
   double targetLat = startLat + 0.001;
   double targetLon = startLon + 0.001;
   double dist = computeDistanceMeters(startLat, startLon, targetLat, targetLon);
-  Serial.print("Distância calculada: ");
-  Serial.print(dist, 2);
-  Serial.println(" m");
+  Serial.printf("Distância calculada: %.2f m\n", dist);
   return dist > 100.0;
 }
 
@@ -205,35 +186,21 @@ bool testOfflineBuffering() {
   const char* testTelem = "/test_offline_buffer.ndjson";
   const char* testPath = "/test_offline_path.ndjson";
 
-  if (LittleFS.exists(testTelem) && !LittleFS.remove(testTelem)) {
-    Serial.printf("Falha ao remover arquivo de teste anterior: %s\n", testTelem);
-  }
-  if (LittleFS.exists(testPath) && !LittleFS.remove(testPath)) {
-    Serial.printf("Falha ao remover arquivo de teste anterior: %s\n", testPath);
-  }
+  if (LittleFS.exists(testTelem)) LittleFS.remove(testTelem);
+  if (LittleFS.exists(testPath)) LittleFS.remove(testPath);
 
   FirebaseJson telemetryJson;
   telemetryJson.set("test", "offline");
   bool ok1 = appendLineToFile(testTelem, telemetryJson.raw());
   bool ok2 = appendLineToFile(testPath, "{\"lat\":0.0,\"lon\":0.0,\"ts\":0}");
+
   std::vector<String> lines;
   bool ok3 = readFileLines(testTelem, lines) && lines.size() == 1;
   lines.clear();
   bool ok4 = readFileLines(testPath, lines) && lines.size() == 1;
 
-  if (!ok3) {
-    Serial.printf("Falha ao ler buffer offline de telemetria: %s\n", testTelem);
-  }
-  if (!ok4) {
-    Serial.printf("Falha ao ler buffer offline de rota: %s\n", testPath);
-  }
-
-  if (LittleFS.exists(testTelem) && !LittleFS.remove(testTelem)) {
-    Serial.printf("Falha ao limpar arquivo de teste: %s\n", testTelem);
-  }
-  if (LittleFS.exists(testPath) && !LittleFS.remove(testPath)) {
-    Serial.printf("Falha ao limpar arquivo de teste: %s\n", testPath);
-  }
+  if (LittleFS.exists(testTelem)) LittleFS.remove(testTelem);
+  if (LittleFS.exists(testPath)) LittleFS.remove(testPath);
 
   return ok1 && ok2 && ok3 && ok4;
 }

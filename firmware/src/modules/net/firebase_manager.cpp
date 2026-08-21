@@ -1,5 +1,6 @@
 #include "modules/net/firebase_manager.h"
 #include "modules/net/wifi_manager.h"
+#include "config.h"
 #include <Firebase_ESP_Client.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
@@ -13,11 +14,6 @@ FirebaseAuth auth;
 FirebaseConfig config;
 bool firebaseInitialized = false;
 
-#define FIREBASE_DATABASE_URL "https://usvs-drone-fluvial-autonomo-default-rtdb.firebaseio.com/"
-#define API_KEY "AIzaSyCxdGSogOdPjuckQLZsW2RzpKrltlbBBmw"
-#define USER_EMAIL "operador@usv-am.local"
-#define USER_PASSWORD "DevTest123!"
-
 bool setupFirebase() {
   if (firebaseInitialized) {
     return true;
@@ -29,10 +25,10 @@ bool setupFirebase() {
   }
 
   Serial.println("Iniciando configuração do Firebase...");
-  config.api_key = API_KEY;
+  config.api_key = FIREBASE_API_KEY;
   config.database_url = FIREBASE_DATABASE_URL;
-  auth.user.email = USER_EMAIL;
-  auth.user.password = USER_PASSWORD;
+  auth.user.email = FIREBASE_USER_EMAIL;
+  auth.user.password = FIREBASE_USER_PASSWORD;
   config.token_status_callback = tokenStatusCallback;
 
   Firebase.reconnectNetwork(true);
@@ -54,7 +50,7 @@ String getTelemetryPath() {
 bool updateStatus() {
   FirebaseJson statusJson;
   statusJson.set("online", true);
-  statusJson.set("last_seen", millis() / 1000);
+  statusJson.set("last_seen", (int)(millis() / 1000));
   statusJson.set("active_mission_id", activeMissionId);
   statusJson.set("nav_state", navStateToString(currentState));
   statusJson.set("active_leg", activeLeg);
@@ -64,7 +60,6 @@ bool updateStatus() {
 
   String statusPath = getStatusPath();
   if (Firebase.RTDB.setJSON(&fbdo, statusPath.c_str(), &statusJson)) {
-    Serial.println("Status atualizado com sucesso.");
     return true;
   }
   Serial.print("Erro atualizando status: ");
@@ -93,12 +88,12 @@ bool setOfflinePresence() {
 }
 
 bool publishTelemetry() {
-  updateSensorValues();
-  updateLOSControl();
-  updateMotorOutputs();
+  // NOTA: Leitura de sensores e controle de motores agora são responsabilidade
+  // do loop principal (main.cpp), não da publicação de telemetria.
+  // Esta função apenas publica o estado atual.
 
   FirebaseJson telemetryJson;
-  telemetryJson.set("timestamp", millis() / 1000);
+  telemetryJson.set("timestamp", (int)(millis() / 1000));
   telemetryJson.set("mission_id", activeMissionId);
   telemetryJson.set("position/lat", currentLat);
   telemetryJson.set("position/lon", currentLon);
@@ -108,25 +103,27 @@ bool publishTelemetry() {
   telemetryJson.set("actuators/thrust_l", thrustL);
   telemetryJson.set("actuators/thrust_r", thrustR);
 
-  Serial.printf("[TELEM] estado=%s lat=%.6f lon=%.6f hdg=%.2f bat=%dmV obs=%dcm thrust=(%d,%d) prog=%.2f\n",
+  Serial.printf("[TELEM] estado=%s lat=%.6f lon=%.6f hdg=%.1f bat=%dmV obs=%dcm thrust=(%d,%d) prog=%.2f\n",
                 navStateToString(currentState), currentLat, currentLon, currentHeading,
                 batteryMv, obsDist, thrustL, thrustR, routeProgress);
 
   if (isWiFiConnected() && Firebase.ready()) {
     if (sendTelemetryJSON(telemetryJson)) {
-      Serial.println("Telemetria publicada com sucesso no RTDB.");
+      return true;
     } else {
       Serial.print("Falha ao publicar telemetria: ");
       Serial.println(fbdo.errorReason());
+      // Falhou online — salvar offline como fallback
     }
-  } else {
-    if (!bufferTelemetryOffline(telemetryJson)) {
-      Serial.println("Falha ao salvar telemetria no buffer offline.");
-    }
-    if (!bufferPathPointOffline(currentLat, currentLon, millis() / 1000)) {
-      Serial.println("Falha ao salvar ponto de rota no buffer offline.");
-    }
-    Serial.println("Telemetria e rota salvas no buffer offline.");
   }
+
+  // Offline ou falha de envio: buffering
+  if (!bufferTelemetryOffline(telemetryJson)) {
+    Serial.println("Falha ao salvar telemetria no buffer offline.");
+  }
+  if (!bufferPathPointOffline(currentLat, currentLon, millis() / 1000)) {
+    Serial.println("Falha ao salvar ponto de rota no buffer offline.");
+  }
+
   return true;
 }

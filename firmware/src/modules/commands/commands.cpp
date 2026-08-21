@@ -7,8 +7,11 @@
 bool fetchCommand(DroneCommand &command) {
   String commandPath = "/drones/" + droneId + "/command";
   if (!Firebase.RTDB.getJSON(&fbdo, commandPath.c_str())) {
-    Serial.print("Erro lendo comando: ");
-    Serial.println(fbdo.errorReason());
+    // Não logar em cada polling — muito ruidoso. Só se for erro real.
+    if (fbdo.errorReason() != "path not exist" && fbdo.errorReason().length() > 0) {
+      Serial.print("Erro lendo comando: ");
+      Serial.println(fbdo.errorReason());
+    }
     return false;
   }
 
@@ -19,7 +22,7 @@ bool fetchCommand(DroneCommand &command) {
   }
 
   command.commandId = data.stringValue;
-  if (command.commandId == "" || command.commandId == lastCommandId) {
+  if (command.commandId.length() == 0 || command.commandId == lastCommandId) {
     return false;
   }
 
@@ -47,6 +50,7 @@ void setNavState(NavState newState) {
 void handleCommand(const DroneCommand &command) {
   Serial.print("Processando comando: ");
   Serial.println(command.type);
+
   if (command.type == "set_destination") {
     activeMissionId = command.missionId;
     homeLat = currentLat;
@@ -58,10 +62,9 @@ void handleCommand(const DroneCommand &command) {
     activeLeg = 0;
     routeProgress = 0.0;
     setNavState(NAVIGATING_TO_GOAL);
-    Serial.print("Destino definido: ");
-    Serial.print(command.targetLat, 6);
-    Serial.print(", ");
-    Serial.println(command.targetLon, 6);
+    Serial.printf("Destino definido: %.6f, %.6f (dist=%.1fm)\n",
+                  command.targetLat, command.targetLon, routeDistanceMeters);
+
   } else if (command.type == "emergency_stop") {
     goalLat = homeLat;
     goalLon = homeLon;
@@ -71,9 +74,12 @@ void handleCommand(const DroneCommand &command) {
     routeProgress = 0.0;
     setNavState(RETURNING_TO_HOME);
     Serial.println("Emergência: retornando para a origem.");
+
   } else {
-    Serial.println("Comando desconhecido recebido.");
+    Serial.print("Comando desconhecido: ");
+    Serial.println(command.type);
   }
+
   lastCommandId = command.commandId;
 }
 

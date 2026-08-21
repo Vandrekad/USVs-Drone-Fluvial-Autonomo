@@ -6,10 +6,10 @@
 struct DroneCommand {
   String commandId;
   String type;
-  double targetLat;
-  double targetLon;
+  double targetLat = 0.0;   // FIX: inicializar para evitar valor lixo
+  double targetLon = 0.0;   // FIX: inicializar para evitar valor lixo
   String missionId;
-  unsigned long issuedAt;
+  unsigned long issuedAt = 0;
 };
 
 void setNavState(NavState newState);

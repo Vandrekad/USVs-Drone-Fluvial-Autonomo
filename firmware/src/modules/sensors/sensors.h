@@ -5,6 +5,7 @@
 bool initHardwareSensors();
 void initMotors();
 bool initCompass();
+void stopMotors();
 void updateMotorOutputs();
 void readUltrasonic();
 bool readCompass();

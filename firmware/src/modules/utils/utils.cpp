@@ -2,6 +2,7 @@
 #include <ArduinoJson.h>
 #include <mbedtls/sha256.h>
 #include <vector>
+#include <Firebase_ESP_Client.h>
 
 #include "modules/state/state.h"
 
@@ -23,7 +24,15 @@ double headingErrorDeg(double desired, double current) {
 
 String computeSHA256Hex(const String &input) {
   unsigned char hash[32];
+
+  // mbedtls_sha256_ret é deprecated no ESP-IDF >= 5.x
+  // Usar mbedtls_sha256 (mesma assinatura, sem sufixo _ret)
+#if defined(MBEDTLS_VERSION_NUMBER) && MBEDTLS_VERSION_NUMBER >= 0x03000000
+  mbedtls_sha256((const unsigned char *)input.c_str(), input.length(), hash, 0);
+#else
   mbedtls_sha256_ret((const unsigned char *)input.c_str(), input.length(), hash, 0);
+#endif
+
   String hex;
   hex.reserve(64);
   const char hexChars[] = "0123456789abcdef";
@@ -49,7 +58,8 @@ double nmeaToDecimal(const String &field, char hemisphere) {
 }
 
 String computeLocalPathHash(const std::vector<String> &lines) {
-  StaticJsonDocument<512> doc;
+  // ArduinoJson v7: usar JsonDocument em vez de StaticJsonDocument
+  JsonDocument doc;
   String concatenated;
   int count = min((int)lines.size(), 5);
   for (int i = 0; i < count; i++) {
@@ -59,14 +69,12 @@ String computeLocalPathHash(const std::vector<String> &lines) {
     }
     double lat = doc["lat"] | 0.0;
     double lon = doc["lon"] | 0.0;
-    unsigned long ts = doc["ts"] | 0;
+    unsigned long ts = doc["ts"] | 0UL;
     concatenated += String(lat, 6) + "," + String(lon, 6) + "," + String(ts) + ";";
     doc.clear();
   }
   return computeSHA256Hex(concatenated);
 }
-
-#include <Firebase_ESP_Client.h>
 
 bool computeRTDBPathHash(const String &missionId, String &hash, FirebaseData &fbdo) {
   if (missionId.length() == 0) {
@@ -81,7 +89,8 @@ bool computeRTDBPathHash(const String &missionId, String &hash, FirebaseData &fb
     return false;
   }
 
-  StaticJsonDocument<8192> doc;
+  // ArduinoJson v7: usar JsonDocument
+  JsonDocument doc;
   auto error = deserializeJson(doc, raw);
   if (error || !doc.is<JsonObject>()) {
     return false;
@@ -90,9 +99,9 @@ bool computeRTDBPathHash(const String &missionId, String &hash, FirebaseData &fb
   std::vector<String> keys;
   keys.reserve(10);
   for (JsonPair kv : doc.as<JsonObject>()) {
-    keys.push_back(kv.key().c_str());
+    keys.push_back(String(kv.key().c_str()));
   }
-  sort(keys.begin(), keys.end());
+  std::sort(keys.begin(), keys.end());
 
   String concat;
   int count = min((int)keys.size(), 5);
@@ -101,7 +110,7 @@ bool computeRTDBPathHash(const String &missionId, String &hash, FirebaseData &fb
     if (!item.isNull()) {
       double lat = item["lat"] | 0.0;
       double lon = item["lon"] | 0.0;
-      unsigned long ts = item["ts"] | 0;
+      unsigned long ts = item["ts"] | 0UL;
       concat += String(lat, 6) + "," + String(lon, 6) + "," + String(ts) + ";";
     }
   }

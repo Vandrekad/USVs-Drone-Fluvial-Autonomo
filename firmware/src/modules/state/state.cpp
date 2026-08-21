@@ -1,12 +1,11 @@
 #include "modules/state/state.h"
 
-const String droneId = "drone_01";
-const unsigned long telemetryIntervalMs = 2000;
-const unsigned long statusIntervalMs = 2000;
-const unsigned long commandIntervalMs = 1000;
-const char* telemetryBufferPath = "/telemetry_buffer.ndjson";
-const char* pathBufferPath = "/path_buffer.ndjson";
+// Identificação
+const String droneId = DRONE_ID;
+const char* telemetryBufferPath = TELEMETRY_BUFFER_PATH;
+const char* pathBufferPath = PATH_BUFFER_PATH;
 
+// Estado de navegação
 NavState currentState = IDLE_HOLDING_POSITION;
 double currentLat = -3.1019;
 double currentLon = -60.0250;
@@ -18,12 +17,14 @@ int thrustR = 0;
 String activeMissionId = "";
 String lastCommandId = "";
 
+// Sensores
 bool hasGpsFix = false;
 double gpsLat = -3.1019;
 double gpsLon = -60.0250;
 double gpsCourse = 0.0;
 bool compassReady = false;
 
+// Missão e rota
 double goalLat = -3.1019;
 double goalLon = -60.0250;
 double homeLat = -3.1019;
@@ -32,3 +33,6 @@ double routeDistanceMeters = 0.0;
 double remainingDistanceMeters = 0.0;
 int activeLeg = 0;
 double routeProgress = 0.0;
+
+// Flag de conectividade
+bool needFlushBuffers = true;
