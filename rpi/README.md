@@ -1,9 +1,9 @@
-# RPi4 — Lado Raspberry Pi da migração USV-AM (F1 + F2)
+# RPi4 — Lado Raspberry Pi da migração USV-AM (F1 + F2 + F3)
 
-Transporte serial JSON-lines entre o **Raspberry Pi 4** e o **ESP32** (F1), mais
-a camada Firebase RTDB que o RPi assume do ESP32 (F2). Ambas testáveis
-**sem hardware** (estratégia mock-first do cronograma: o código é migrado antes
-dos componentes chegarem).
+Transporte serial JSON-lines entre o **Raspberry Pi 4** e o **ESP32** (F1), a
+camada Firebase RTDB que o RPi assume do ESP32 (F2), e a resiliência de bordo
+— watchdog, presença, log rotativo e systemd (F3). Tudo testável **sem hardware**
+(estratégia mock-first do cronograma: o código é migrado antes dos componentes chegarem).
 
 ## Arquivos
 
@@ -12,7 +12,9 @@ dos componentes chegarem).
 | `serial_bridge.py` | F1 — Ponte serial: lê telemetria do ESP32, envia comandos (`SerialBridge`) |
 | `esp32_simulator.py` | F1 — Emula o firmware ESP32 (telemetria + resposta a comandos) |
 | `firebase_client.py` | F2 — Publica no RTDB + escuta comandos. `RTDBClient` (real) / `MockRTDB` (teste) / `FirebasePublisher` |
-| `rpi_daemon.py` | F2 — Daemon que costura bridge ↔ RTDB (`--selftest` em memória, `--port`+`--service-account`+`--database-url` em produção) |
+| `rpi_daemon.py` | F2+F3 — Daemon: bridge ↔ RTDB + watchdog/presença/log (`--selftest` em memória) |
+| `deploy/usv-rpi-daemon.service` | F3 — Unit systemd (auto-start no boot + restart on crash) |
+| `deploy/usv-rpi-daemon.journald.conf` | F3 — Limite/rotação do journal (protege o cartão SD) |
 | `requirements.txt` | `pyserial` (F1) + `firebase-admin` (F2) |
 
 ## Protocolo (JSON-lines, 115200 baud)
@@ -145,3 +147,52 @@ python rpi_daemon.py \
 > **Auth:** o RPi usa o **Admin SDK com service account** (privilégio total no RTDB),
 > diferente do firmware que usa auth de usuário (email/senha). Gere o service account
 > no Firebase Console → Configurações → Contas de serviço → Gerar nova chave privada.
+
+---
+
+# F3 — Resiliência (watchdog + presença + log + systemd)
+
+O daemon agora se recupera sozinho e sobe no boot:
+
+- **Watchdog do link serial:** se a porta cair, reabre com backoff exponencial
+  (1s → 2s → … → teto 30s), resetando o backoff ao reconectar. Uma thread de
+  heartbeat roda o watchdog a cada 5s.
+- **Presença:** publica `/drones/{id}/status/presence` (online + last_seen) a cada
+  ciclo e marca `status/online=false` no shutdown — equivale ao `onDisconnect` que
+  antes era do ESP32, agora que o RPi é o dono do RTDB.
+- **Detecção de silêncio do ESP32:** se nenhuma telemetria chega em 15s, registra
+  `esp32_silence` em `/logs` (uma vez, até voltar a receber) — sinaliza reset do
+  ESP32 ou cabo solto.
+- **Log rotativo:** o daemon loga no journald (via `logging`); o limite de tamanho
+  é imposto pelo journald (config abaixo), protegendo o cartão SD em campo.
+
+## Instalar como serviço systemd (no RPi)
+
+```bash
+# 1. Rotação/limite do journal (protege o SD)
+sudo cp deploy/usv-rpi-daemon.journald.conf /etc/systemd/journald.conf.d/usv.conf
+sudo systemctl restart systemd-journald
+
+# 2. Instalar a unit (ajuste caminhos/URL dentro do .service antes)
+sudo cp deploy/usv-rpi-daemon.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now usv-rpi-daemon
+
+# 3. Acompanhar
+systemctl status usv-rpi-daemon
+journalctl -u usv-rpi-daemon -f
+```
+
+A unit reinicia o daemon sempre que ele cair (`Restart=always`, backoff 3s), com um
+freio anti-loop (`StartLimitBurst=5` em 60s). Sobe só após `network-online.target`
+(o Firebase precisa de rede).
+
+## Testar a resiliência SEM hardware
+
+O `--selftest` já cobre a F3: exercita o watchdog (2 falhas de abertura → reconexão
+com backoff), a publicação de presença, o alerta de silêncio (sem duplicar) e o
+offline no shutdown — tudo com um relógio controlável, sem sleeps reais:
+```bash
+python rpi_daemon.py --selftest
+# SELF-TEST F2+F3 OK - ...
+```
