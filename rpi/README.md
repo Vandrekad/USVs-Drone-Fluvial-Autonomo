@@ -1,7 +1,7 @@
-# RPi4 — Lado Raspberry Pi da migração USV-AM (F1)
+# RPi4 — Lado Raspberry Pi da migração USV-AM (F1 + F2)
 
-Transporte serial JSON-lines entre o **Raspberry Pi 4** e o **ESP32**.
-Nesta fase (F1) só existe o transporte + um simulador do ESP32 para testar
+Transporte serial JSON-lines entre o **Raspberry Pi 4** e o **ESP32** (F1), mais
+a camada Firebase RTDB que o RPi assume do ESP32 (F2). Ambas testáveis
 **sem hardware** (estratégia mock-first do cronograma: o código é migrado antes
 dos componentes chegarem).
 
@@ -9,9 +9,11 @@ dos componentes chegarem).
 
 | Arquivo | Função |
 |---|---|
-| `serial_bridge.py` | Ponte: lê telemetria do ESP32, envia comandos (`SerialBridge`) |
-| `esp32_simulator.py` | Emula o firmware ESP32 (telemetria + resposta a comandos) |
-| `requirements.txt` | `pyserial` (F1). `firebase-admin` entra na F2 |
+| `serial_bridge.py` | F1 — Ponte serial: lê telemetria do ESP32, envia comandos (`SerialBridge`) |
+| `esp32_simulator.py` | F1 — Emula o firmware ESP32 (telemetria + resposta a comandos) |
+| `firebase_client.py` | F2 — Publica no RTDB + escuta comandos. `RTDBClient` (real) / `MockRTDB` (teste) / `FirebasePublisher` |
+| `rpi_daemon.py` | F2 — Daemon que costura bridge ↔ RTDB (`--selftest` em memória, `--port`+`--service-account`+`--database-url` em produção) |
+| `requirements.txt` | `pyserial` (F1) + `firebase-admin` (F2) |
 
 ## Protocolo (JSON-lines, 115200 baud)
 
@@ -96,3 +98,50 @@ bridge = SerialBridge("/dev/serial0", on_message=on_msg)
 bridge.open()
 bridge.set_destination("cmd_1", "m_1", -3.105, -60.03)
 ```
+
+---
+
+# F2 — RPi assume o Firebase RTDB
+
+Nesta fase o RPi passa a ser dono da camada de nuvem: publica telemetria/status/
+path/logs no RTDB e escuta `/drones/{id}/command` para repassar comandos ao ESP32.
+O firmware já detecta o RPi (flag `RPI_PRESENT`, F1) e **para de escrever direto no
+Firebase enquanto o RPi está presente** — sem escrita duplicada. Se o RPi cair, o
+ESP32 retoma a publicação direta após 30s (invariante de autonomia).
+
+## Mapeamento de dados (contrato do projeto)
+
+| Origem (ESP32 via UART) | Destino no RTDB |
+|---|---|
+| `telemetry` | `/drones/{id}/telemetry` + `/drones/{id}/status` + `/missions/{mid}/path/p_{ts}` |
+| `event` | `/logs` (push) |
+| — | `/drones/{id}/status/online=false` no shutdown do daemon |
+
+Comandos do dashboard no RTDB (`cmd_type` + `target`) são traduzidos para o formato
+UART (`set_destination`/`emergency_stop`) e enviados ao ESP32 pela bridge.
+
+## Testar SEM hardware nem rede
+
+Selftest em memória (usa `MockRTDB` + bridge falsa — não instala firebase-admin,
+não abre porta serial, não toca o RTDB real):
+```bash
+python rpi_daemon.py --selftest
+```
+Valida: telemetria→telemetry/status/path, evento→/logs, comando RTDB→ESP32
+(set_destination e emergency_stop), ack/pong ignorados, offline no stop.
+
+## Rodar em produção (a partir de 19/09, com hardware + Firebase)
+
+Requer o `serviceAccount.json` (F0 item 0.4) e a URL do RTDB:
+```bash
+pip install -r requirements.txt
+python rpi_daemon.py \
+    --port /dev/serial0 \
+    --service-account /home/pi/serviceAccount.json \
+    --database-url https://usvs-drone-fluvial-autonomo-default-rtdb.firebaseio.com/ \
+    --drone-id drone_01
+```
+
+> **Auth:** o RPi usa o **Admin SDK com service account** (privilégio total no RTDB),
+> diferente do firmware que usa auth de usuário (email/senha). Gere o service account
+> no Firebase Console → Configurações → Contas de serviço → Gerar nova chave privada.

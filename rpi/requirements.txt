@@ -1,6 +1,4 @@
 # Dependências do lado Raspberry Pi 4 — USV-AM
-# F1: apenas transporte serial. firebase-admin entra na F2.
 
-pyserial>=3.5
-
-# (F2) firebase-admin>=6.5
+pyserial>=3.5          # F1: transporte serial
+firebase-admin>=6.5    # F2: RPi assume a camada RTDB (Admin SDK + service account)
